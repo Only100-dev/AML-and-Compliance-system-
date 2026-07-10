@@ -1,0 +1,22 @@
+{
+  "mode": "execute",
+  "ranAt": "2026-06-20T09:56:37.323Z",
+  "testSentinel": "UAT-POL-VERIFY-001",
+  "deleted": {
+    "universalTasks": 0,
+    "calendarEvents": 0,
+    "policyAttestations": 0,
+    "auditLogs": 2
+  },
+  "deletedAuditLogIds": [
+    "cmqm4bdmz0010orolwfci9q0i",
+    "cmqm4bdqs0012orol9r2mocbz"
+  ],
+  "deletedAttestationIds": [
+    "cmqm4bdmx000yorolqh1lns69"
+  ],
+  "postCleanup": {
+    "totalAuditLogEntries": 11397,
+    "remainingNullHashEntries": 0
+  }
+}
