@@ -1,0 +1,17 @@
+CBUAE Notice 3551/2021
+Title: Anti-Money Laundering and Combating the Financing of Terrorism Guidelines for Financial Institutions
+Issuing Authority: Central Bank of the United Arab Emirates
+Publication Date: 2021-12-15
+Effective Date: 2022-01-01
+
+Summary: This notice establishes comprehensive AML/CFT/CPF requirements for all financial institutions operating under CBUAE supervision, including insurance companies. It mandates risk-based customer due diligence, suspicious activity reporting, and sanctions screening obligations.
+
+Key Obligations:
+1. IT Department must implement real-time transaction monitoring systems within 90 days.
+2. Compliance Department must designate a Money Laundering Reporting Officer (MLRO) within 30 days.
+3. Operations Department must establish customer risk rating methodologies within 60 days.
+4. Front Office must conduct enhanced due diligence for all high-risk customers.
+5. Finance Department must allocate budget for AML compliance tools annually.
+
+Risk Impact: HIGH
+Affected Departments: IT, Compliance, Operations, Front Office, Finance
