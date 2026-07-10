@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IC-OS Preview Launcher</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #e5e5e5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #171717;
+            border-bottom: 1px solid #262626;
+            flex-shrink: 0;
+        }
+        .toolbar h1 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #10b981;
+            margin-right: auto;
+        }
+        .btn {
+            padding: 6px 12px;
+            border: 1px solid #333;
+            border-radius: 6px;
+            background: #1a1a1a;
+            color: #e5e5e5;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.15s;
+        }
+        .btn:hover { background: #262626; border-color: #10b981; }
+        .btn.active { background: #10b981; color: #000; border-color: #10b981; }
+        .preview-area {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            overflow: auto;
+        }
+        .device-frame {
+            transition: all 0.3s ease;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+            background: #fff;
+        }
+        .device-frame.full { width: 100%; height: 100%; border-radius: 0; }
+        .device-frame.desktop { width: 1440px; height: 900px; max-width: 100%; max-height: 100%; }
+        .device-frame.tablet { width: 768px; height: 1024px; max-width: 100%; max-height: 90vh; }
+        .device-frame.mobile { width: 390px; height: 844px; max-width: 100%; max-height: 90vh; }
+        .notch {
+            width: 120px; height: 24px; background: #000; border-radius: 0 0 12px 12px;
+            margin: 0 auto; position: relative; z-index: 1;
+        }
+        iframe { width: 100%; height: 100%; border: none; }
+        .status {
+            padding: 8px 16px;
+            background: #171717;
+            border-top: 1px solid #262626;
+            font-size: 11px;
+            color: #666;
+            display: flex;
+            justify-content: space-between;
+        }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+        .status-dot.green { background: #10b981; }
+        .status-dot.red { background: #ef4444; }
+        .status-dot.yellow { background: #f59e0b; }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <h1>⬡ IC-OS Preview</h1>
+        <button class="btn active" onclick="setMode('full')" title="Full Screen (1)">FullScreen</button>
+        <button class="btn" onclick="setMode('desktop')" title="Desktop (2)">Desktop</button>
+        <button class="btn" onclick="setMode('tablet')" title="Tablet (3)">Tablet</button>
+        <button class="btn" onclick="setMode('mobile')" title="Mobile (4)">Mobile</button>
+        <button class="btn" onclick="refresh()" title="Refresh (R)">⟳ Refresh</button>
+        <button class="btn" onclick="openDirect()" title="Open in New Tab">↗ New Tab</button>
+    </div>
+    <div class="preview-area" id="previewArea">
+        <div class="device-frame full" id="deviceFrame">
+            <div id="notchContainer"></div>
+            <iframe id="previewFrame" src="/" allow="clipboard-read; clipboard-write"></iframe>
+        </div>
+    </div>
+    <div class="status">
+        <span><span class="status-dot yellow" id="statusDot"></span><span id="statusText">Connecting...</span></span>
+        <span id="modeText">Full Screen</span>
+    </div>
+    <script>
+        const frame = document.getElementById('previewFrame');
+        const deviceFrame = document.getElementById('deviceFrame');
+        const notchContainer = document.getElementById('notchContainer');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const modeText = document.getElementById('modeText');
+        
+        let currentMode = 'full';
+        
+        function setMode(mode) {
+            currentMode = mode;
+            deviceFrame.className = 'device-frame ' + mode;
+            
+            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Show notch for tablet and mobile
+            notchContainer.innerHTML = (mode === 'tablet' || mode === 'mobile') ? '<div class="notch"></div>' : '';
+            
+            const modeNames = { full: 'Full Screen', desktop: 'Desktop (1440×900)', tablet: 'Tablet (768×1024)', mobile: 'Mobile (390×844)' };
+            modeText.textContent = modeNames[mode] || mode;
+        }
+        
+        function refresh() {
+            frame.src = frame.src;
+            statusDot.className = 'status-dot yellow';
+            statusText.textContent = 'Refreshing...';
+        }
+        
+        function openDirect() {
+            window.open('/', '_blank');
+        }
+        
+        frame.addEventListener('load', () => {
+            statusDot.className = 'status-dot green';
+            statusText.textContent = 'Connected';
+        });
+        
+        frame.addEventListener('error', () => {
+            statusDot.className = 'status-dot red';
+            statusText.textContent = 'Connection failed';
+        });
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === '1') setMode('full');
+            if (e.key === '2') setMode('desktop');
+            if (e.key === '3') setMode('tablet');
+            if (e.key === '4') setMode('mobile');
+            if (e.key === 'r' || e.key === 'R') refresh();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// IC-OS Training Effectiveness Measurement — Schema Enhancement Reference
+// Task ID: 2-d
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// This file documents the additional fields and models needed for
+// Training Effectiveness Measurement (pre/post assessment tracking).
+//
+// To apply these changes, merge them into the main schema.prisma,
+// then run: bun run db:push
+//
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Enhanced TrainingEnrollment (additional fields to add) ──────────────────
+//
+// Add these fields to the existing TrainingEnrollment model:
+//
+//   preAssessmentScore    Float?               // Pre-training assessment score (0-100)
+//   postAssessmentScore   Float?               // Post-training assessment score (0-100)
+//   knowledgeGain         Float?               // Calculated: postAssessmentScore - preAssessmentScore
+//   assessmentMethod      String?              // "quiz", "practical", "scenario", "peer_review"
+//   assessmentDate        DateTime?            // Date when post-assessment was completed
+//   effectivenessRating   String?              // "excellent", "good", "satisfactory", "needs_improvement"
+//
+// Effectiveness Rating Logic:
+//   knowledgeGain >= 40  → "excellent"
+//   knowledgeGain >= 25  → "good"
+//   knowledgeGain >= 10  → "satisfactory"
+//   knowledgeGain < 10   → "needs_improvement"
+//
+// Compliance Score Formula:
+//   (postScore - preScore) / preScore * 100
+//   This gives the percentage improvement relative to baseline knowledge.
+
+// ─── New Model: TrainingAssessment ──────────────────────────────────────────
+
+model TrainingAssessment {
+  id               String   @id @default(cuid())
+  enrollmentId     String   // FK to TrainingEnrollment
+  assessmentType   String   // "pre" or "post"
+  score            Float    // Raw score achieved
+  maxScore         Float    @default(100)  // Maximum possible score
+  percentage       Float    // score / maxScore * 100
+  passed           Boolean  @default(false)  // Whether score >= passingThreshold
+  passingThreshold Float    @default(70)  // Minimum percentage to pass
+  questions        String   // JSON: array of { question, answer, correct, score }
+  timeTakenMinutes Int?     // Duration of assessment
+  completedAt      DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relation to enrollment
+  enrollment       TrainingEnrollment @relation(fields: [enrollmentId], references: [id])
+}
+
+// ─── Updated TrainingEnrollment model (complete) ────────────────────────────
+
+model TrainingEnrollment {
+  id                  String    @id @default(cuid())
+  courseId            String
+  userId              String
+  userName            String
+  department          String
+  status              String    @default("enrolled")
+  enrolledAt          DateTime  @default(now())
+  completedAt         DateTime?
+  expiryDate          DateTime?
+  score               Float?
+  certificateUrl      String?
+
+  // ─── Training Effectiveness Fields ─────────────────────────────────────
+  preAssessmentScore  Float?               // Pre-training assessment score (0-100)
+  postAssessmentScore Float?               // Post-training assessment score (0-100)
+  knowledgeGain       Float?               // Calculated: post - pre
+  assessmentMethod    String?              // "quiz", "practical", "scenario", "peer_review"
+  assessmentDate      DateTime?            // Date post-assessment completed
+  effectivenessRating String?              // "excellent", "good", "satisfactory", "needs_improvement"
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relation to assessments
+  assessments         TrainingAssessment[]
+}

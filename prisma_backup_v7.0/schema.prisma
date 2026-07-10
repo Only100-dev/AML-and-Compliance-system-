@@ -1,0 +1,378 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  role          String   @default("compliance_officer")
+  jurisdiction  String   @default("CBUAE")
+  avatar        String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model RegulatoryCircular {
+  id              String   @id @default(cuid())
+  title           String
+  regulator       String
+  circularNumber  String
+  effectiveDate   DateTime
+  status          String   @default("ingested")
+  summary         String?
+  affectedDepts   String?
+  sourceUrl       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model GapAnalysis {
+  id              String   @id @default(cuid())
+  circularId      String
+  missingClauses  String
+  aiConfidence    Float    @default(0.0)
+  status          String   @default("draft")
+  approvedBy      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model AMLAlert {
+  id              String   @id @default(cuid())
+  caseId          String   @unique
+  riskScore       Float    @default(0.0)
+  riskLevel       String   @default("low")
+  alertType       String
+  description     String
+  aiFlags         String?
+  goAMLDraft      String?
+  status          String   @default("new")
+  assignedTo      String?
+  createdBy       String?
+  approvedBy      String?
+  jurisdiction    String   @default("CBUAE")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model SanctionsException {
+  id              String   @id @default(cuid())
+  entityName      String
+  riskDomain      String
+  justification   String
+  compensatingControls String?
+  sunsetDate      DateTime
+  approvedBy      String?
+  status          String   @default("active")
+  cbuaeNotified   Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model InspectionEvidence {
+  id              String   @id @default(cuid())
+  inspectionId    String
+  fileName        String
+  fileHash        String
+  fileSize        Int      @default(0)
+  fileType        String
+  aiVerified      Boolean  @default(false)
+  aiConfidence    Float    @default(0.0)
+  aiVerificationDetail String?
+  uploadedBy      String
+  department      String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Claim {
+  id              String   @id @default(cuid())
+  claimNumber     String   @unique
+  policyNumber    String
+  claimType       String
+  claimantName    String
+  description     String
+  amount          Float    @default(0.0)
+  fraudScore      Float    @default(0.0)
+  status          String   @default("submitted")
+  priority        String   @default("normal")
+  assignedAdjuster String?
+  siuFlagged      Boolean  @default(false)
+  jurisdiction    String   @default("CBUAE")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  userId          String
+  action          String
+  resource        String
+  resourceId      String?
+  details         String?
+  aiConfidence    Float?
+  sha256Hash      String?
+  ipAddress       String?
+  createdAt       DateTime @default(now())
+}
+
+model KRIMetric {
+  id              String   @id @default(cuid())
+  name            String
+  value           Float    @default(0.0)
+  target          Float    @default(0.0)
+  trend           String   @default("stable")
+  jurisdiction    String   @default("CBUAE")
+  category        String
+  updatedAt       DateTime @updatedAt
+}
+
+model Regulation {
+  id                String   @id @default(cuid())
+  title             String
+  issuer            String   @default("CBUAE")
+  category          String   @default("General")
+  description       String?
+  effectiveDate     DateTime
+  nextReviewDate    DateTime?
+  complianceStatus  String   @default("PENDING")
+  assignedTo        String?
+  priority          String   @default("normal")
+  sourceUrl         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Policy {
+  id              String   @id @default(cuid())
+  title           String
+  policyNumber    String   @unique
+  category        String
+  version         String   @default("1.0")
+  status          String   @default("draft")
+  department      String
+  owner           String
+  reviewDate      DateTime?
+  approvalDate    DateTime?
+  approvedBy      String?
+  documentUrl     String?
+  aiReviewed      Boolean  @default(false)
+  aiConfidence    Float    @default(0.0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model LaborLawCompliance {
+  id              String   @id @default(cuid())
+  requirement     String
+  category        String   @default("General")
+  authority       String   @default("MOHRE")
+  complianceStatus String  @default("PENDING")
+  dueDate         DateTime?
+  assignedTo      String?
+  details         String?
+  quotaType       String?
+  currentCount    Int      @default(0)
+  requiredCount   Int      @default(0)
+  lastVerified    DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model LegalCase {
+  id              String   @id @default(cuid())
+  caseNumber      String   @unique
+  title           String
+  caseType        String
+  status          String   @default("open")
+  priority        String   @default("normal")
+  assignedCounsel String?
+  department      String?
+  description     String?
+  filingDate      DateTime?
+  nextHearing     DateTime?
+  resolutionDate  DateTime?
+  jurisdiction    String   @default("CBUAE")
+  aiSummary       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model TrainingCourse {
+  id              String   @id @default(cuid())
+  title           String
+  category        String
+  provider        String?
+  durationHours   Float    @default(0.0)
+  isMandatory     Boolean  @default(false)
+  targetAudience  String?
+  certification   Boolean  @default(false)
+  validForMonths  Int      @default(12)
+  status          String   @default("active")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model TrainingEnrollment {
+  id              String   @id @default(cuid())
+  courseId        String
+  userId          String
+  userName        String
+  department      String
+  status          String   @default("enrolled")
+  enrolledAt      DateTime @default(now())
+  completedAt     DateTime?
+  expiryDate      DateTime?
+  score           Float?
+  certificateUrl  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ComplianceAudit {
+  id              String   @id @default(cuid())
+  auditNumber     String   @unique
+  title           String
+  auditType       String   @default("internal")
+  status          String   @default("scheduled")
+  scheduledDate   DateTime?
+  completedDate   DateTime?
+  leadAuditor     String?
+  scope           String?
+  findings        String?
+  remediationStatus String @default("not_started")
+  remediationDueDate DateTime?
+  riskLevel       String   @default("medium")
+  jurisdiction    String   @default("CBUAE")
+  department      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ─── Phase 3: Advanced Compliance Workflows ──────────────────────────────────
+
+model AdverseMediaSession {
+  id                String   @id @default(cuid())
+  subjectType       String   // "INDIVIDUAL" or "ENTITY"
+  subjectName       String
+  aka               String?
+  nationality       String?
+  searchConfig      String   // JSON string of keywords/filters
+  results           String   // JSON string of logged results
+  decision          String?  // "CLEAR", "POTENTIAL_MATCH", "FALSE_POSITIVE", "CONFIRMED_MATCH"
+  rationale         String?
+  createdAt         DateTime @default(now())
+  createdBy         String
+}
+
+model CorporateKYC {
+  id                String   @id @default(cuid())
+  legalName         String
+  tradeLicenseNo    String
+  trn               String?
+  legalForm         String   // e.g., "LLC", "PJSC", "Free Zone"
+  uboIdentified     Boolean  @default(false)
+  uboDetails        String?  // JSON of UBOs (>=25% ownership)
+  pepInManagement   Boolean  @default(false)
+  riskScore         Int      @default(0) // 0-100
+  riskRating        String   // "LOW", "MEDIUM", "HIGH"
+  status            String   @default("DRAFT") // DRAFT, PENDING_MAKER_CHECKER, APPROVED, REJECTED
+  createdAt         DateTime @default(now())
+}
+
+model IndividualKYC {
+  id                String   @id @default(cuid())
+  fullName          String
+  emiratesId        String?
+  passportNo        String
+  nationality       String
+  isPep             Boolean  @default(false)
+  riskRating        String   // "STANDARD", "HIGH"
+  eddRequired       Boolean  @default(false)
+  status            String   @default("DRAFT")
+  createdAt         DateTime @default(now())
+}
+
+model GoAMLFiling {
+  id                String   @id @default(cuid())
+  reportType        String   // "STR", "SAR", "CTR", "IFT", "PNMR"
+  referenceNumber   String   @unique
+  subjectName       String
+  amountAED         Float?
+  filingStatus      String   // "DRAFT", "PENDING_APPROVAL", "SUBMITTED_TO_FIU", "ACKNOWLEDGED"
+  xmlPayload        String   // Stored XML string
+  fiuAcknowledgementId String?
+  createdAt         DateTime @default(now())
+  submittedAt       DateTime?
+}
+
+model MakerCheckerLog {
+  id                String   @id @default(cuid())
+  operationType     String   // e.g., "KYC_HIGH_RISK_APPROVAL", "GOAML_SUBMIT"
+  entityId          String
+  entityType        String   // e.g., "CorporateKYC", "GoAMLFiling"
+  makerId           String
+  makerName         String
+  checkerId         String?
+  checkerName       String?
+  status            String   // "PENDING", "APPROVED", "REJECTED", "EXPIRED"
+  expiryTime        DateTime
+  payloadSnapshot   String   // JSON of what is being approved
+  createdAt         DateTime @default(now())
+  reviewedAt        DateTime?
+}
+
+// ─── Phase 4: On-Premise AI Agent & Quarterly CBUAE Reporting ────────────────
+
+model AIChatSession {
+  id            String   @id @default(cuid())
+  userId        String
+  contextModule String   // e.g., "goAML", "Nafis", "Insurance", "General"
+  createdAt     DateTime @default(now())
+  messages      AIChatMessage[]
+}
+
+model AIChatMessage {
+  id          String   @id @default(cuid())
+  sessionId   String
+  session     AIChatSession @relation(fields: [sessionId], references: [id])
+  role        String   // "user" or "assistant"
+  content     String
+  modelUsed   String?  // e.g., "llama3:8b", "qwen2.5:14b"
+  latencyMs   Int?
+  createdAt   DateTime @default(now())
+}
+
+model QuarterlyReport {
+  id                String   @id @default(cuid())
+  quarter           String   // e.g., "Q3-2024"
+  year              Int
+  entityName        String
+  totalPolicies     Int
+  totalPremiumAED   Float
+  activePolicies    Int
+  cancellationRate  Float
+  status            String   // "PROCESSING", "VALIDATED", "READY", "SUBMITTED"
+  cbuaeSubmissionId String?
+  createdAt         DateTime @default(now())
+  records           InsuranceRecord[]
+}
+
+model InsuranceRecord {
+  id                String   @id @default(cuid())
+  policyNumber      String   @unique
+  clientName        String   // Will be masked in CBUAE view
+  emirate           String
+  productType       String
+  premiumAED        Float    // Will be masked in CBUAE view
+  amlStatus         String   // "CLEARED", "FLAGGED"
+  reportId          String?
+  report            QuarterlyReport? @relation(fields: [reportId], references: [id])
+}

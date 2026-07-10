@@ -1,0 +1,1917 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                     String    @id @default(cuid())
+  email                  String    @unique
+  name                   String
+  role                   String    @default("compliance_officer")
+  jurisdiction           String
+  avatar                 String?
+  isActive               Boolean   @default(true)
+  passwordHash           String?   // P0-A Fix: bcrypt hashed password (replaces hardcoded demo passwords)
+  dmlroDelegatedToId     String?
+  dmlroDelegatedToName   String?
+  dmlroDelegationActive  Boolean   @default(false)
+  dmlroDelegationExpiry  DateTime?
+  dmlroDelegationReason  String?
+  sessionsRevokedAt      DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+}
+
+model RegulatoryCircular {
+  id                String   @id @default(cuid())
+  title             String
+  regulator         String
+  circularNumber    String
+  effectiveDate     DateTime
+  status            String   @default("ingested") // ingested | DRAFT | PUBLISHED | ARCHIVED | SUPERSEDED
+  summary           String?
+  affectedDepts     String?
+  sourceUrl         String?
+  // ── Phase F: Regulatory Circular Ingestion Engine (backward-compatible additions) ──
+  issuingAuthority  String?  // CBUAE / UAE FIU / FATF / Insurance Board
+  publicationDate   DateTime?
+  documentUrl       String?  // local path or remote URL of source doc
+  riskImpactLevel   String?  // LOW | MEDIUM | HIGH | CRITICAL
+  ingestionMethod   String?  // MANUAL_UPLOAD | AUTO_SCRAPER
+  version           Int      @default(1)
+  supersedesId      String?  // FK to a prior RegulatoryCircular.id this one supersedes
+  keyObligations    String?  // JSON array of obligation strings (committed)
+  rawExtractedJson  String?  // full LLM extraction payload (auditability)
+  documentHash      String?  @unique // SHA-256 of source document bytes (dedup)
+  ingestionLogId    String?  // FK to IngestionLog.id
+  committedAt       DateTime?
+  committedById     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status])
+  @@index([riskImpactLevel])
+  @@index([ingestionMethod])
+  @@index([regulator])
+  @@index([supersedesId])
+}
+
+// ── Phase F: Regulatory Circular Ingestion Engine ─────────────────────────────
+// Source configuration for the automated crawler (Tier 2). The cron job that
+// would invoke these sources is intentionally left DISABLED for V1/UAT; only
+// the configuration surface and skeleton endpoints ship in this release.
+
+model IngestionSource {
+  id              String   @id @default(cuid())
+  name            String   // "CBUAE Media Centre", "UAE FIU Newsroom", etc.
+  baseUrl         String   // root URL of the source
+  scraperType     String   @default("RSS") // RSS | HEADLESS | API
+  cssSelectors    String?  // JSON: { title, date, body, link }
+  crawlFrequency  String   @default("DAILY") // HOURLY | DAILY | WEEKLY
+  isActive        Boolean  @default(false)
+  lastCrawledAt   DateTime?
+  lastCrawlStatus String?  // SUCCESS | ERROR | PAUSED
+  lastErrorMessage String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([scraperType])
+}
+
+// Individual obligation extracted from a circular (committed, searchable).
+model ExtractedObligation {
+  id              String   @id @default(cuid())
+  circularId      String   // FK to RegulatoryCircular.id
+  actionItem      String   // the obligation text
+  affectedDept    String   // e.g. "Compliance", "Underwriting", "Claims", "Finance"
+  deadlineDays    Int?     // days from effective date to comply
+  status          String   @default("OPEN") // OPEN | IN_PROGRESS | REMEDIATED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([circularId])
+  @@index([affectedDept])
+  @@index([status])
+}
+
+// Append-only audit log of every ingestion event: upload, extraction,
+// commit, scrape attempt. Stores the raw LLM JSON so auditors can reconstruct
+// exactly what the model returned before any human editing.
+
+model IngestionLog {
+  id                String   @id @default(cuid())
+  source            String   // MANUAL_UPLOAD | AUTO_SCRAPER:<sourceName>
+  documentHash      String?  // SHA-256 of source bytes (dedup key)
+  fileName          String?
+  mimeType          String?
+  fileSize          Int?
+  status            String   @default("UPLOADED") // UPLOADED | EXTRACTED | COMMITTED | REJECTED | ERROR
+  rawExtractedJson  String?  // full LLM extraction payload (auditability)
+  reviewerId        String?
+  reviewerName      String?
+  reviewerNotes     String?
+  errorMessage      String?
+  circularId        String?  // FK to RegulatoryCircular.id (set on COMMITTED)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status])
+  @@index([source])
+  @@index([documentHash])
+  @@index([createdAt])
+}
+
+model GapAnalysis {
+  id              String   @id @default(cuid())
+  circularId      String
+  missingClauses  String
+  aiConfidence    Float    @default(0.0)
+  status          String   @default("draft")
+  approvedBy      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model AMLAlert {
+  id              String   @id @default(cuid())
+  caseId          String   @unique
+  riskScore       Float    @default(0.0)
+  riskLevel       String   @default("low")
+  alertType       String
+  description     String
+  aiFlags         String?
+  goAMLDraft      String?
+  status          String   @default("new")
+  assignedTo      String?
+  createdBy       String?
+  approvedBy      String?
+  jurisdiction    String
+  amount          Float    @default(0.0)
+  policyNumber    String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status, riskLevel])
+  @@index([alertType, status])
+  @@index([jurisdiction, status])
+  @@index([assignedTo, status])
+  @@index([createdAt])
+  @@index([jurisdiction, createdAt])
+}
+
+model SanctionsException {
+  id              String   @id @default(cuid())
+  entityName      String
+  riskDomain      String
+  justification   String
+  compensatingControls String?
+  sunsetDate      DateTime
+  approvedBy      String?
+  status          String   @default("active")
+  cbuaeNotified   Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model InspectionEvidence {
+  id              String   @id @default(cuid())
+  inspectionId    String
+  fileName        String
+  fileHash        String
+  fileSize        Int      @default(0)
+  fileType        String
+  aiVerified      Boolean  @default(false)
+  aiConfidence    Float    @default(0.0)
+  aiVerificationDetail String?
+  uploadedBy      String
+  department      String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Claim {
+  id              String   @id @default(cuid())
+  claimNumber     String   @unique
+  policyNumber    String
+  claimType       String
+  claimantName    String
+  description     String
+  amount          Float    @default(0.0)
+  fraudScore      Float    @default(0.0)
+  status          String   @default("submitted")
+  priority        String   @default("normal")
+  assignedAdjuster String?
+  siuFlagged      Boolean  @default(false)
+  jurisdiction    String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([policyNumber, status])
+  @@index([claimantName])
+  @@index([siuFlagged, fraudScore])
+  @@index([status, createdAt])
+  @@index([assignedAdjuster, status])
+  @@index([jurisdiction, status, createdAt])
+  @@index([jurisdiction, createdAt])
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  userId          String
+  action          String
+  resource        String
+  resourceId      String?
+  details         String?
+  aiConfidence    Float?
+  sha256Hash      String?
+  ipAddress       String?
+  jurisdiction    String   @default("UNKNOWN")
+  createdAt       DateTime @default(now())
+
+  // P0-C Fix: WORM/Immutable Audit Chain — SHA-256 linked-list for tamper evidence
+  prevHash        String?  // SHA-256 of the previous AuditLog entry (chain link)
+  currentHash     String?  // SHA-256 of THIS entry (computed from all persisted fields + prevHash)
+  chainIndex      Int      @default(0) // Monotonic sequence number for chain integrity verification
+  isSealed        Boolean  @default(false) // Once sealed, entry cannot be modified (WORM)
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([resource, createdAt])
+  @@index([createdAt])
+  @@index([userId, action, createdAt])
+  @@index([jurisdiction, createdAt])
+  @@index([jurisdiction, action, createdAt])
+  @@index([chainIndex])
+}
+
+model KRIMetric {
+  id              String   @id @default(cuid())
+  name            String
+  value           Float    @default(0.0)
+  target          Float    @default(0.0)
+  warning         Float?   // Phase 5: Warning threshold
+  critical        Float?   // Phase 5: Critical threshold
+  unit            String?  // Phase 5: %, tier, count, etc.
+  trend           String   @default("stable")
+  jurisdiction    String
+  category        String
+  updatedAt       DateTime @updatedAt
+
+  @@index([jurisdiction, category])
+  @@index([jurisdiction, name])
+}
+
+/// Phase 5: Compliance Gap Tracking & Remediation
+/// PRINCIPLE C: Remediation is accountable — every gap has an owner, due date, and status.
+/// PRINCIPLE D: Cross-region intelligence (systemic gap detection, anonymized).
+model Gap {
+  id                String    @id @default(cuid())
+  jurisdictionId    String    // GCC alpha-2 code: AE, SA, BH, QA, OM, KW
+  controlId         String?   // Link to specific control or obligation
+  theme             String    // One of 9 scorecard themes
+  title             String
+  description       String
+  severity          String    // Critical | High | Medium | Low | Observation
+  status            String    @default("Open") // Open | In_Progress | Awaiting_Approval | Closed | Escalated
+  detectedBy        String    @default("system") // system | user | audit | regulatory_change
+  detectionTrigger  String?   // JSON metadata about what triggered this gap
+  ownerId           String?   // FK to User.id
+  ownerName         String?   // Denormalized for quick display
+  ownerRole         String?   // Role of the assigned owner
+  dueDate           DateTime?
+  closedDate        DateTime?
+  isSystemic        Boolean   @default(false) // Same gap found in multiple countries
+  relatedGapIds     String?   // JSON array of Gap IDs in other jurisdictions
+  evidence          String?   // JSON array of evidence objects
+  remediationNotes  String?
+  escalationLevel   Int       @default(0) // 0=none, 1=manager, 2=director, 3=C-suite
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([jurisdictionId, status])
+  @@index([isSystemic])
+  @@index([severity, status])
+  @@index([ownerId, status])
+  @@index([theme, jurisdictionId])
+  @@index([dueDate])
+}
+
+/// Phase 5: Audit Scorecard — Compliance scoring by regulator and theme
+/// PRINCIPLE B: Scoring is evidence-based. Gap rating (0-3) must have clear criteria.
+model AuditScorecard {
+  id              String   @id @default(cuid())
+  jurisdictionId  String   // GCC alpha-2 code
+  theme           String   // One of 9 scorecard themes
+  regulator       String   // CBUAE, SAMA, CBB, QCB, CBOA, CBK
+  gapRating       Int      @default(0) // 0=Compliant, 1=Minor, 2=Moderate, 3=Critical
+  evidence        String?  // JSON: evidence supporting this rating
+  lastAssessedBy  String?
+  lastAssessedAt  DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([jurisdictionId, theme, regulator])
+  @@index([jurisdictionId, theme])
+  @@index([regulator])
+  @@index([gapRating])
+}
+
+/// Phase 5: Regulatory Deadline Types — Multi-jurisdiction support
+model RegulatoryDeadlineType {
+  id              String   @id @default(cuid())
+  code            String   @unique // e.g., CBUAE_SAR_FILING, SAMA_SAR_FILING
+  name            String
+  regulator       String
+  jurisdictionId  String
+  deadlineDays    Int
+  deadlineUnit    String   @default("business_days") // business_days | calendar_days
+  category        String   // SAR_FILING | CAPITAL_ADEQUACY | GOVERNANCE | etc.
+  description     String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([jurisdictionId, category])
+  @@index([regulator])
+}
+
+model Regulation {
+  id                String   @id @default(cuid())
+  title             String
+  issuer            String
+  category          String   @default("General")
+  description       String?
+  effectiveDate     DateTime
+  nextReviewDate    DateTime?
+  complianceStatus  String   @default("PENDING")
+  assignedTo        String?
+  priority          String   @default("normal")
+  sourceUrl         String?
+  jurisdiction      String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([jurisdiction, complianceStatus])
+}
+
+model Policy {
+  id              String   @id @default(cuid())
+  title           String
+  policyNumber    String   @unique
+  category        String
+  version         String   @default("1.0")
+  status          String   @default("draft")
+  department      String
+  owner           String
+  reviewDate      DateTime?
+  approvalDate    DateTime?
+  approvedBy      String?
+  documentUrl     String?
+  aiReviewed      Boolean  @default(false)
+  aiConfidence    Float    @default(0.0)
+  jurisdiction    String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status, department])
+  @@index([owner])
+  @@index([category, status])
+  @@index([jurisdiction, status])
+}
+
+model LaborLawCompliance {
+  id              String   @id @default(cuid())
+  requirement     String
+  category        String   @default("General")
+  authority       String   @default("MOHRE")
+  complianceStatus String  @default("PENDING")
+  dueDate         DateTime?
+  assignedTo      String?
+  details         String?
+  quotaType       String?
+  currentCount    Int      @default(0)
+  requiredCount   Int      @default(0)
+  lastVerified    DateTime?
+  jurisdiction    String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([jurisdiction, complianceStatus])
+}
+
+model LegalCase {
+  id              String   @id @default(cuid())
+  caseNumber      String   @unique
+  title           String
+  caseType        String
+  status          String   @default("open")
+  priority        String   @default("normal")
+  assignedCounsel String?
+  department      String?
+  description     String?
+  filingDate      DateTime?
+  nextHearing     DateTime?
+  resolutionDate  DateTime?
+  jurisdiction    String
+  aiSummary       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([jurisdiction, status])
+  @@index([jurisdiction, createdAt])
+}
+
+model TrainingCourse {
+  id              String   @id @default(cuid())
+  title           String
+  category        String
+  provider        String?
+  durationHours   Float    @default(0.0)
+  isMandatory     Boolean  @default(false)
+  targetAudience  String?
+  certification   Boolean  @default(false)
+  validForMonths  Int      @default(12)
+  status          String   @default("active")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model TrainingEnrollment {
+  id                  String    @id @default(cuid())
+  courseId            String
+  userId              String
+  userName            String
+  department          String
+  status              String    @default("enrolled")
+  enrolledAt          DateTime  @default(now())
+  completedAt         DateTime?
+  expiryDate          DateTime?
+  score               Float?
+  certificateUrl      String?
+
+  // Training Effectiveness Measurement Fields
+  preAssessmentScore  Float?               // Pre-training assessment score (0-100)
+  postAssessmentScore Float?               // Post-training assessment score (0-100)
+  knowledgeGain       Float?               // Calculated: post - pre
+  assessmentMethod    String?              // "quiz", "practical", "scenario", "peer_review"
+  assessmentDate      DateTime?            // Date post-assessment was completed
+  effectivenessRating String?              // "excellent", "good", "satisfactory", "needs_improvement"
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  assessments         TrainingAssessment[]
+}
+
+model TrainingAssessment {
+  id               String   @id @default(cuid())
+  enrollmentId     String   // FK to TrainingEnrollment
+  assessmentType   String   // "pre" or "post"
+  score            Float    // Raw score achieved
+  maxScore         Float    @default(100)
+  percentage       Float    // score / maxScore * 100
+  passed           Boolean  @default(false)
+  passingThreshold Float    @default(70)
+  questions        String   // JSON: array of { question, answer, correct, score }
+  timeTakenMinutes Int?
+  completedAt      DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  enrollment       TrainingEnrollment @relation(fields: [enrollmentId], references: [id])
+}
+
+model ComplianceAudit {
+  id              String   @id @default(cuid())
+  auditNumber     String   @unique
+  title           String
+  auditType       String   @default("internal")
+  status          String   @default("scheduled")
+  scheduledDate   DateTime?
+  completedDate   DateTime?
+  leadAuditor     String?
+  scope           String?
+  findings        String?
+  remediationStatus String @default("not_started")
+  remediationDueDate DateTime?
+  riskLevel       String   @default("medium")
+  jurisdiction    String
+  department      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([jurisdiction, status])
+  @@index([jurisdiction, createdAt])
+}
+
+// ─── Phase 3: Advanced Compliance Workflows ──────────────────────────────────
+
+model AdverseMediaSession {
+  id                String   @id @default(cuid())
+  subjectType       String   // "INDIVIDUAL" or "ENTITY"
+  subjectName       String
+  aka               String?
+  nationality       String?
+  searchConfig      String   // JSON string of keywords/filters
+  results           String   // JSON string of logged results
+  decision          String?  // "CLEAR", "POTENTIAL_MATCH", "FALSE_POSITIVE", "CONFIRMED_MATCH"
+  rationale         String?
+  esgRiskTags       String   @default("[]")  // JSON array of ESG risk tags
+  esgRiskScore      Int      @default(0)     // 0-100 ESG risk score
+  createdAt         DateTime @default(now())
+  createdBy         String
+}
+
+model CorporateKYC {
+  id                String   @id @default(cuid())
+  legalName         String
+  tradeLicenseNo    String
+  trn               String?
+  legalForm         String   // e.g., "LLC", "PJSC", "Free Zone"
+  uboIdentified     Boolean  @default(false)
+  uboDetails        String?  // JSON of UBOs (>=25% ownership)
+  pepInManagement   Boolean  @default(false)
+  riskScore         Int      @default(0) // 0-100
+  riskRating        String   // "LOW", "MEDIUM", "HIGH"
+  status            String   @default("DRAFT") // DRAFT, PENDING_MAKER_CHECKER, APPROVED, REJECTED
+  jurisdiction      String
+  createdAt         DateTime @default(now())
+
+  @@index([status, riskRating])
+  @@index([legalName])
+  @@index([createdAt])
+  @@index([jurisdiction, status])
+}
+
+model IndividualKYC {
+  id                String   @id @default(cuid())
+  fullName          String
+  emiratesId        String?
+  passportNo        String
+  nationality       String
+  isPep             Boolean  @default(false)
+  riskRating        String   // "STANDARD", "HIGH"
+  eddRequired       Boolean  @default(false)
+  status            String   @default("DRAFT")
+  jurisdiction      String
+  createdAt         DateTime @default(now())
+
+  @@index([status])
+  @@index([nationality])
+  @@index([jurisdiction, status])
+}
+
+model GoAMLFiling {
+  id                String   @id @default(cuid())
+  reportType        String   // "STR", "SAR", "CTR", "IFT", "PNMR"
+  referenceNumber   String   @unique
+  subjectName       String
+  amountAED         Float?
+  filingStatus      String   // "DRAFT", "PENDING_APPROVAL", "SUBMITTED_TO_FIU", "ACKNOWLEDGED"
+  xmlPayload        String   // Stored XML string
+  fiuAcknowledgementId String?
+  jurisdiction      String
+  createdAt         DateTime @default(now())
+  submittedAt       DateTime?
+
+  @@index([filingStatus, createdAt])
+  @@index([reportType, filingStatus])
+  @@index([createdAt])
+  @@index([jurisdiction, filingStatus, createdAt])
+}
+
+model MakerCheckerLog {
+  id                String   @id @default(cuid())
+  operationType     String   // e.g., "KYC_HIGH_RISK_APPROVAL", "GOAML_SUBMIT"
+  entityId          String
+  entityType        String   // e.g., "CorporateKYC", "GoAMLFiling"
+  makerId           String
+  makerName         String
+  checkerId         String?
+  checkerName       String?
+  status            String   // "PENDING", "APPROVED", "REJECTED", "EXPIRED"
+  expiryTime        DateTime
+  payloadSnapshot   String   // JSON of what is being approved
+  jurisdiction      String
+  createdAt         DateTime @default(now())
+  reviewedAt        DateTime?
+
+  @@index([status, expiryTime])
+  @@index([entityType, entityId])
+  @@index([makerId, status])
+  @@index([jurisdiction, status])
+}
+
+// ─── Phase 4: On-Premise AI Agent & Quarterly CBUAE Reporting ────────────────
+
+model AIChatSession {
+  id            String   @id @default(cuid())
+  userId        String
+  contextModule String   // e.g., "goAML", "Nafis", "Insurance", "General"
+  createdAt     DateTime @default(now())
+  messages      AIChatMessage[]
+}
+
+model AIEngineConfig {
+  id                 String   @id @default(cuid())
+  provider           String   @default("z-ai")   // "z-ai", "openai", "anthropic"
+  apiKey             String?                       // Encrypted at rest; NEVER returned in plaintext
+  defaultModel       String   @default("default")
+  temperature        Float    @default(0.3)
+  maxTokens          Int      @default(2048)
+  topP               Float    @default(0.9)
+  frequencyPenalty   Float    @default(0.0)
+  presencePenalty    Float    @default(0.0)
+  monthlyTokenQuota  Int      @default(500000)
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model AIChatMessage {
+  id          String   @id @default(cuid())
+  sessionId   String
+  session     AIChatSession @relation(fields: [sessionId], references: [id])
+  role        String   // "user" or "assistant"
+  content     String
+  modelUsed   String?  // e.g., "llama3:8b", "qwen2.5:14b"
+  latencyMs   Int?
+  createdAt   DateTime @default(now())
+}
+
+model QuarterlyReport {
+  id                String   @id @default(cuid())
+  quarter           String   // e.g., "Q3-2024"
+  year              Int
+  entityName        String
+  totalPolicies     Int
+  totalPremiumAED   Float
+  activePolicies    Int
+  cancellationRate  Float
+  status            String   // "PROCESSING", "VALIDATED", "READY", "SUBMITTED"
+  cbuaeSubmissionId String?
+  createdAt         DateTime @default(now())
+  records           InsuranceRecord[]
+}
+
+model InsuranceRecord {
+  id                String   @id @default(cuid())
+  policyNumber      String   @unique
+  clientName        String   // Will be masked in CBUAE view
+  emirate           String
+  productType       String
+  premiumAED        Float    // Will be masked in CBUAE view
+  amlStatus         String   // "CLEARED", "FLAGGED"
+  reportId          String?
+  report            QuarterlyReport? @relation(fields: [reportId], references: [id])
+}
+
+// ─── Phase 5: Regulatory Critical Enhancement Models (FDL 10/2025 / CR 134/2025) ──
+
+/// Compliance alerts for SAR deadlines, regulatory deadlines, MLRO escalations
+/// Fail-closed: All MLRO deadline alerts immutably logged per C5 requirement
+model ComplianceAlert {
+  id              String   @id @default(cuid())
+  alertType       String   // "SAR_DEADLINE", "REGULATORY_DEADLINE", "MLRO_ESCALATION", "KYC_REVIEW_OVERDUE", "TRAINING_OVERDUE", "SANCTIONS_SCREENING_DUE", "POLICY_REVIEW_DUE"
+  severity        String   @default("high")  // "low", "medium", "high", "critical"
+  status          String   @default("active") // "active", "acknowledged", "resolved", "expired"
+  title           String
+  description     String
+  sourceModule    String   // Module that triggered the alert
+  sourceEntityId  String?  // ID of the related entity
+  sourceEntityType String? // "AMLAlert", "GoAMLFiling", "CorporateKYC", etc.
+  dueDate         DateTime // Deadline for the alert
+  assignedToId    String?  // User responsible
+  acknowledgedAt  DateTime?
+  acknowledgedBy  String?
+  resolvedAt      DateTime?
+  resolutionNote  String?
+  isImmutable     Boolean  @default(true) // Cannot be deleted once created
+  sha256Hash      String?  // Integrity verification
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([alertType, status])
+  @@index([severity, status])
+  @@index([dueDate, status])
+  @@index([sourceEntityId, sourceEntityType])
+}
+
+/// Sanctions screening events with fuzzy match tracking
+model SanctionsScreening {
+  id              String   @id @default(cuid())
+  screeningId     String   @unique // Unique screening event ID
+  entityType      String   // "INDIVIDUAL", "ENTITY"
+  primaryName     String
+  aliases         String?  // JSON array of aliases
+  identifiers     String?  // JSON: emiratesId, passportNo, dob
+  status          String   @default("CLEAR") // "CLEAR", "POTENTIAL_MATCH", "CONFIRMED_MATCH", "ERROR"
+  highestScore    Int      @default(0) // 0-100 fuzzy match score
+  matches         String?  // JSON array of match details
+  screeningLists  String?  // JSON: which lists were screened
+  idempotencyKey  String?  // Prevents duplicate screening
+  screenedById    String?  // User who initiated
+  failClosed      Boolean  @default(true) // If screening fails, default to blocking
+  errorMessage    String?  // If screening failed
+  jurisdiction    String
+  screeningHash   String?  // SHA-256 integrity hash (Fix 5 + Addendum E)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status, highestScore])
+  @@index([primaryName])
+  @@index([createdAt])
+  @@index([jurisdiction, status, createdAt])
+  @@index([jurisdiction, createdAt])
+}
+
+/// SAR Case tracking with 30-day FDL 10/2025 deadline enforcement
+model SARCase {
+  id                String   @id @default(cuid())
+  caseNumber        String   @unique
+  alertId           String?  // Link to originating AML alert
+  filingDeadline    DateTime // Must be <= 30 days from trigger date (FDL 10/2025 Art. 8)
+  triggerDate       DateTime // Date the SAR obligation was triggered
+  daysRemaining     Int      @default(30)
+  status            String   @default("DRAFT") // "DRAFT", "PENDING_REVIEW", "REQUIRES_REVISION", "APPROVED_FOR_FILING", "SUBMITTED_TO_FIU", "REJECTED_BY_FIU"
+  narrative         String?  // Long text field for SAR narrative
+  goamlXmlPath      String?  // Path to generated XML
+  tippingOffWarning Boolean  @default(true) // Mandatory CBUAE requirement (FDL 10/2025 Art. 12)
+  tippingOffAcknowledgedAt DateTime?
+  subjectName       String
+  subjectType       String   @default("INDIVIDUAL") // "INDIVIDUAL", "ENTITY"
+  jurisdiction      String
+  riskLevel         String   @default("high")
+  createdById       String?
+  reviewedById      String?
+  submittedById     String?
+  submittedAt       DateTime?
+  rejectionReason   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status, filingDeadline])
+  @@index([alertId])
+  @@index([filingDeadline])
+  @@index([jurisdiction, status, filingDeadline])
+}
+
+/// Compliance calendar events with cross-module integration
+model CalendarEvent {
+  id              String   @id @default(cuid())
+  title           String
+  description     String?
+  eventType       String   // "regulatory", "audit", "training", "policy", "aml", "kyc_review", "sar_deadline", "sanctions_screening"
+  eventDate       DateTime
+  endDate         DateTime?
+  priority        String   @default("normal") // "low", "normal", "high", "urgent"
+  jurisdiction    String
+  status          String   @default("upcoming") // "upcoming", "in_progress", "completed", "overdue", "cancelled"
+  sourceModule    String?  // Module that created this event
+  sourceEntityId  String?  // ID of related entity
+  isRecurring     Boolean  @default(false)
+  recurringPattern String? // "daily", "weekly", "monthly", "quarterly", "annually"
+  assignedToId    String?
+  location        String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([eventDate, status])
+  @@index([eventType, status])
+  @@index([jurisdiction, eventDate])
+}
+
+/// Policy attestation tracking per CR 134/2025
+model PolicyAttestation {
+  id              String   @id @default(cuid())
+  policyId        String   // Link to Policy
+  policyNumber    String
+  policyTitle     String
+  userId          String
+  userName        String
+  department      String
+  status          String   @default("pending") // "pending", "acknowledged", "overdue"
+  attestationDeadline DateTime
+  acknowledgedAt  DateTime?
+  ip4Address      String?  // For audit trail
+  userAgent       String?  // Browser info for audit
+  version         String   // Policy version being attested
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// Individual remediation actions from audit findings
+model RemediationAction {
+  id              String   @id @default(cuid())
+  auditId         String?  // Link to ComplianceAudit
+  findingId       String?  // Specific finding
+  title           String
+  description     String
+  status          String   @default("not_started") // "not_started", "in_progress", "completed", "overdue", "waived"
+  priority        String   @default("high")
+  assignedToId    String?
+  assignedToName  String?
+  dueDate         DateTime
+  completedDate   DateTime?
+  evidence        String?  // JSON: evidence of remediation
+  waivalReason   String?  // If waived, documented reason
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// Notification system for compliance deadlines and alerts
+model Notification {
+  id              String   @id @default(cuid())
+  userId          String   // Target user
+  userName        String
+  type            String   // "sar_deadline", "training_overdue", "policy_review", "kyc_overdue", "regulatory_update", "maker_checker_pending", "sanctions_hit", "audit_finding"
+  title           String
+  message         String
+  priority        String   @default("normal") // "low", "normal", "high", "urgent"
+  isRead          Boolean  @default(false)
+  readAt          DateTime?
+  sourceModule    String?
+  sourceEntityId  String?
+  actionUrl       String?  // Deep link to the relevant module
+  expiresAt       DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+/// Vendor / third-party due diligence per CR 134/2025 outsourcing requirements
+model VendorDueDiligence {
+  id              String   @id @default(cuid())
+  vendorName      String
+  serviceType     String   // "IT", "Compliance", "Operations", "Consulting", "Other"
+  riskRating      String   @default("medium") // "low", "medium", "high", "critical"
+  amlAssessment   String?  // JSON: AML risk assessment results
+  contractEndDate DateTime?
+  reviewDate      DateTime?
+  reviewStatus    String   @default("pending") // "pending", "in_progress", "approved", "rejected"
+  assignedReviewer String?
+  documents       String?  // JSON: document references
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// Unified compliance case linking alerts, KYC, SARs, and sanctions
+model ComplianceCase {
+  id              String   @id @default(cuid())
+  caseNumber      String   @unique
+  title           String
+  caseType        String   // "aml_investigation", "sanctions_review", "kyc_escalation", "fraud_investigation", "regulatory_inquiry"
+  status          String   @default("open") // "open", "in_progress", "under_review", "escalated", "closed"
+  priority        String   @default("normal")
+  riskLevel       String   @default("medium")
+  jurisdiction    String
+  description     String?  // Long text field for case description
+  // Cross-module links (JSON arrays of linked entity IDs)
+  linkedAlertIds  String?  // JSON: ["alert_id_1", "alert_id_2"]
+  linkedKYCIds    String?  // JSON: ["kyc_id_1"]
+  linkedSARIds    String?  // JSON: ["sar_id_1"]
+  linkedSanctionsIds String? // JSON: ["screening_id_1"]
+  linkedPolicyIds String?  // JSON: ["policy_id_1"]
+  linkedCaseIds   String?  // JSON: ["legal_case_id_1"]
+  assignedToId    String?
+  assignedToName  String?
+  closedAt        DateTime?
+  closureNotes    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status, priority])
+  @@index([caseType, status])
+  @@index([assignedToId, status])
+  @@index([jurisdiction, status])
+  @@index([jurisdiction, createdAt])
+}
+
+/// Risk assessment versioning with inherent and residual risk
+model RiskAssessment {
+  id              String   @id @default(cuid())
+  assessmentNumber String  @unique
+  title           String
+  domain          String   // "Customer", "Jurisdiction", "Product", "Interface", "Other"
+  category        String
+  inherentRisk    String   @default("medium") // "low", "medium", "high", "critical"
+  residualRisk    String   @default("medium")
+  controls        String?  // JSON: array of control descriptions
+  controlEffectiveness String? @default("moderate") // "weak", "moderate", "strong"
+  riskAppetiteThreshold String? // JSON: board-approved thresholds
+  version         Int      @default(1)
+  approvedBy      String?
+  approvedAt      DateTime?
+  assessmentDate  DateTime @default(now())
+  nextReviewDate  DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// Regulatory deadline tracking for CBUAE filing requirements
+model RegulatoryDeadline {
+  id              String   @id @default(cuid())
+  title           String
+  deadlineType    String   // "cbuae_quarterly", "sar_filing", "ctr_filing", "audit_submission", "regulatory_return"
+  dueDate         DateTime
+  jurisdiction    String
+  status          String   @default("upcoming") // "upcoming", "due_soon", "overdue", "submitted", "cancelled"
+  daysRemaining   Int?
+  assignedToId    String?
+  sourceEntityId  String?
+  sourceModule    String?
+  penaltyForNonCompliance String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([jurisdiction, dueDate])
+}
+
+/// VASP-specific KYC and risk assessment per FDL 10/2025
+model VASPKYC {
+  id              String   @id @default(cuid())
+  vaspName        String
+  licenseNumber   String
+  licenseJurisdiction String
+  vaspType        String   // "exchange", "custodian", "transfer", "defi", "other"
+  walletAddress   String?
+  blockchainNetwork String?
+  riskScore       Int      @default(0) // 0-100
+  riskRating      String   @default("HIGH") // VASPs are HIGH risk by default per FDL 10/2025
+  uboIdentified   Boolean  @default(false)
+  uboDetails      String?  // JSON: UBO information
+  travelRuleCompliant Boolean @default(false) // FATF Travel Rule
+  status          String   @default("DRAFT") // "DRAFT", "PENDING_MAKER_CHECKER", "APPROVED", "REJECTED"
+  reviewDate      DateTime?
+  eddRequired     Boolean  @default(true) // VASPs always require EDD
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// Idempotency tracking for compliance-critical API operations
+model IdempotencyRecord {
+  id              String   @id @default(cuid())
+  idempotencyKey  String   @unique
+  operationType   String   // "SANCTIONS_SCREEN", "SAR_FILE", "GOAML_SUBMIT"
+  responseStatus  Int      // HTTP status code
+  responseBody    String   // JSON cached response
+  expiresAt       DateTime // Keys should expire (e.g., 24 hours)
+  createdAt       DateTime @default(now())
+
+  @@index([operationType, expiresAt])
+}
+
+// ─── Phase 10: Enterprise Module Expansion ──────────────────────────────────
+
+/// Third-Party Vendor Risk Management (TPRM) — Part 7 & Part 22 of URCREP Blueprint
+/// Tracks vendor risk profiles, AML status, DPA compliance, and audit schedules
+model ThirdPartyVendor {
+  id                      String   @id @default(cuid())
+  vendorName              String
+  serviceType             String                     // "IT_Service", "Data_Processor", "Consulting", "Insurance_Broker", "TPA", "Other"
+  riskRating              String   @default("medium") // "low", "medium", "high", "critical"
+  riskScore               Int      @default(0)        // 0-100
+  contractExpiry          DateTime?
+  amlStatus               String   @default("pending") // "clear", "pending", "flagged", "edd_required"
+  dataProcessingAgreement Boolean  @default(false)
+  lastAuditDate           DateTime?
+  nextReviewDate          DateTime?
+  assignedToId            String?
+  country                 String?
+  contractValue           Float?
+  description             String?
+  eddTriggered            Boolean  @default(false)
+  eddCompletedDate        DateTime?
+  isActive                Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([riskRating])
+  @@index([amlStatus])
+  @@index([isActive])
+  @@index([contractExpiry])
+}
+
+/// Business Continuity & Disaster Recovery Plans — Part 3 & Part 27 of URCREP Blueprint
+/// Manages BCP/DRP documents with version control and testing schedules
+model BusinessContinuityPlan {
+  id              String   @id @default(cuid())
+  planType        String                     // "BCP", "DRP", "Incident_Response", "Crisis_Communication"
+  title           String
+  version         String   @default("1.0")
+  status          String   @default("Active") // "Active", "Draft", "Under_Review", "Archived"
+  lastTestedDate  DateTime?
+  nextTestDate    DateTime?
+  testFrequency   String   @default("annual") // "quarterly", "semi-annual", "annual", "biennial"
+  documentUrl     String?
+  owner           String?
+  department      String?
+  rtoHours        Int?                       // Recovery Time Objective in hours
+  rpoHours        Int?                       // Recovery Point Objective in hours
+  description     String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([planType])
+  @@index([status])
+  @@index([isActive])
+  @@index([nextTestDate])
+}
+
+// ─── RAG Scenario Knowledge Base (117+ Operational Scenarios) ────────────────
+
+/// Scenario Knowledge entries for RAG-powered compliance assistant
+/// Each entry represents one battle-tested operational scenario from Packs 1-11
+model ScenarioKnowledge {
+  id                String   @id @default(cuid())
+  packNumber        Int                              // Pack 1-11
+  category          String                           // e.g., "Takaful", "Sanctions", "BlackSwan", "GraphAnalytics"
+  title             String   @unique                 // Unique scenario title
+  scenarioText      String                           // Full scenario description
+  complexity        String                           // Complexity analysis
+  systemWorkflow    String                           // System workflow / response
+  regulatoryAnchor  String                           // Regulatory references
+  tags              String   @default("[]")          // JSON array: ["EarlySurrender", "GCC", "Layering"]
+  riskLevel         String   @default("high")        // "low", "medium", "high", "critical"
+  searchVector      String   @default("")            // Pre-computed searchable text (title + scenario + tags concatenated)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relationships for feedback & usage tracking
+  chatReferences    ScenarioChatReference[]
+
+  @@index([packNumber])
+  @@index([category])
+  @@index([riskLevel, isActive])
+  @@index([isActive])
+}
+
+/// Tracks which scenarios were referenced in AI chat responses
+/// Enables feedback loop and relevance scoring
+model ScenarioChatReference {
+  id              String   @id @default(cuid())
+  chatSessionId   String                           // Link to AIChatSession
+  chatMessageId   String?                          // Link to specific AIChatMessage
+  scenarioId      String                           // Link to ScenarioKnowledge
+  scenario        ScenarioKnowledge @relation(fields: [scenarioId], references: [id])
+  relevanceScore  Float    @default(0.0)           // 0.0-1.0 relevance score
+  userFeedback    String?                          // "positive", "negative", null
+  createdAt       DateTime @default(now())
+
+  @@index([scenarioId, relevanceScore])
+  @@index([chatSessionId])
+}
+
+// ─── Phase 11: Strategic Module Expansion — Bordereaux Validation Engine ──────
+
+/// Bordereaux submissions for broker/cedant data validation before CBUAE reporting
+/// Tracks file upload, Zod validation results, error reports, and submission status
+model BordereauxSubmission {
+  id                String   @id @default(cuid())
+  fileName          String                          // Original uploaded file name
+  fileType          String   @default("csv")        // "csv" or "xlsx"
+  fileSize          Int       @default(0)            // File size in bytes
+  uploadedBy        String                          // User who uploaded
+  status            String   @default("uploaded")   // "uploaded", "validated", "rejected", "submitted"
+  recordCount       Int       @default(0)            // Total rows in file
+  validCount        Int       @default(0)            // Rows passing validation
+  errorCount        Int       @default(0)            // Rows failing validation
+  validationErrors  String   @default("[]")          // JSON array of row-level error details
+  quarter           String?                          // e.g. "Q1-2025"
+  brokerId          String?                          // Broker identifier
+  submittedAt       DateTime?                        // When submitted to CBUAE
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status])
+  @@index([uploadedBy])
+  @@index([createdAt])
+  @@index([quarter])
+}
+
+// ─── Phase C: MLRO & TFS Workflow Models ────────────────────────────────────
+
+/// Emergency admin access with 2-hour TTL — Break-glass procedure for critical ops
+model BreakGlassSession {
+  id              String   @id @default(cuid())
+  userId          String
+  userName        String
+  originalRole    String
+  elevatedRole    String
+  justification   String
+  approverId      String
+  approverName    String
+  status          String   @default("active")  // active, expired, revoked
+  activatedAt     DateTime @default(now())
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([userId, status])
+  @@index([expiresAt])
+  @@index([status])
+}
+
+/// WORM log for DMLRO delegation actions — immutable audit trail
+model DMLRODelegationLog {
+  id              String    @id @default(cuid())
+  mlroUserId      String
+  mlroName        String
+  deputyUserId    String
+  deputyName      String
+  action          String    // ACTIVATED, DEACTIVATED, EXPIRED
+  reason          String
+  activatedAt     DateTime?
+  deactivatedAt   DateTime?
+  expiryDate      DateTime?
+  sha256Hash      String?
+  createdAt       DateTime  @default(now())
+
+  @@index([mlroUserId])
+  @@index([deputyUserId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+/// Terrorist Financing Sanctions freeze/unfreeze actions per CBUAE requirements
+model TFSAction {
+  id                    String    @id @default(cuid())
+  tfsReferenceNumber    String    @unique
+  entityName            String
+  entityType            String    // INDIVIDUAL, ENTITY
+  sanctionsList         String    // UN_SC, EU, UAE_LOCAL, OFAC, OTHER
+  matchScore            Int       @default(0)
+  matchDetails          String?
+  status                String    @default("AUTO_FROZEN")  // AUTO_FROZEN, CONFIRMED, UNFROZEN, FALSE_POSITIVE
+  freezeOrderDate       DateTime  @default(now())
+  unfreezeRequestDate   DateTime?
+  unfreezeApprovalDate  DateTime?
+  unfreezeAuthority     String?
+  fiuReportId           String?
+  tippingOffWarning     Boolean   @default(true)
+  sha256Hash            String?
+  jurisdiction          String
+  riskLevel             String    @default("critical")
+  confirmedById         String?
+  confirmedAt           DateTime?
+
+  // ── Traceability Foreign Keys (Pre-UAT Polish Fix #1) ──────────────────────
+  // An auditor reviewing a frozen asset must be able to trace it directly
+  // back to the specific Customer, Policy, and Case ID.
+  // Ref: FDL 10/2025 Art. 11 (Record-Keeping); CBUAE Notice 3551/2021 S3.3
+  customerId            String?   // FK → User.id (policyholder / entity owner)
+  policyId              String?   // FK → Policy.id (insurance policy under freeze)
+  caseId                String?   // FK → ComplianceCase.id (linked investigation case)
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([status])
+  @@index([entityName])
+  @@index([sanctionsList])
+  @@index([freezeOrderDate])
+  @@index([tfsReferenceNumber])
+  @@index([customerId])
+  @@index([policyId])
+  @@index([caseId])
+}
+
+/// Immutable view log for auditor time-travel queries — point-in-time reconstruction
+model AuditorTimeTravelView {
+  id                  String   @id @default(cuid())
+  auditorId           String
+  auditorName         String?
+  targetDate          DateTime
+  resource            String   // case, alert, kyc, sar
+  resourceId          String?
+  reconstructedState  String?  // JSON
+  hashChainValid      Boolean  @default(false)
+  exportRequested     Boolean  @default(false)
+  exportApprovalId    String?  // Links to MakerCheckerLog
+  ipAddress           String?
+  sha256Hash          String?
+  createdAt           DateTime @default(now())
+
+  @@index([auditorId])
+  @@index([targetDate])
+  @@index([resource])
+  @@index([createdAt])
+}
+
+/// Click-to-reveal PII audit trail — GDPR/CBUAE data minimization compliance
+model PIIRevealLog {
+  id          String   @id @default(cuid())
+  userId      String
+  userName    String?
+  resource    String
+  resourceId  String
+  field       String
+  reason      String?
+  ipAddress   String?
+  sha256Hash  String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([resource, resourceId])
+  @@index([createdAt])
+}
+
+// ─── Phase D: Insurance-Specific AML Models ──────────────────────────────────
+
+/// Product risk scoring engine — CBUAE risk-based approach per product type
+model ProductRiskScore {
+  id              String   @id @default(cuid())
+  productType     String   @unique  // e.g., "Unit-Linked Life", "Term Life", "Investment-Linked"
+  productCategory String   // LIFE, GENERAL, TAKAFUL
+  baseScore       Int      @default(5)  // 1-10
+  amlRiskWeight   Float    @default(1.0)
+  isActive        Boolean  @default(true)
+  scoringFactors  String   @default("{}")  // JSON: { "crossBorder": +2, "highPremium": +1 }
+  lastReviewedAt  DateTime?
+  reviewedById    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([productType])
+  @@index([isActive])
+  @@index([baseScore])
+}
+
+/// Early surrender with auto-MLR flagging — CBUAE early surrender monitoring
+model EarlySurrenderRecord {
+  id                    String    @id @default(cuid())
+  policyNumber          String
+  policyholderName      String
+  productType           String
+  inceptionDate         DateTime
+  surrenderDate         DateTime
+  surrenderValueAED     Float
+  premiumsPaidAED       Float
+  financialLossAED      Float     @default(0)
+  financialLossPct      Float     @default(0)
+  daysSinceInception    Int       @default(0)
+  isThirdPartyPayout    Boolean   @default(false)
+  coolingOffPeriodDays  Int       @default(30)
+  isWithinCoolingOff    Boolean   @default(false)
+  coolingOffStatus      String    @default("OUTSIDE_COOLING_OFF")  // WITHIN_COOLING_OFF, OUTSIDE_COOLING_OFF
+  highMLRFlag           Boolean   @default(false)
+  mlrTriggerReason      String?
+  mlrFlaggedAt          DateTime?
+  linkedAlertId         String?
+  alertGenerated        Boolean   @default(false)
+  reviewStatus          String    @default("PENDING_REVIEW")  // PENDING_REVIEW, APPROVED, ESCALATED
+  mlrReviewedById       String?
+  mlrReviewedAt         DateTime?
+  mlrResolution         String?   // CONFIRMED_MLR, FALSE_POSITIVE, ESCALATED_TO_SAR
+  reviewNotes           String?
+  createdBy             String?
+  sha256Hash            String?
+
+  // ── Traceability Foreign Keys (Pre-UAT Polish Fix #1) ──────────────────────
+  // An auditor reviewing an early surrender MLR flag must be able to trace
+  // it directly back to the specific Customer, Policy, and Case ID.
+  // Ref: FDL 10/2025 Art. 11 (Record-Keeping); CBUAE Notice 3551/2021 S3.3
+  customerId            String?   // FK → User.id (policyholder who initiated surrender)
+  policyId              String?   // FK → Policy.id (insurance policy being surrendered)
+  caseId                String?   // FK → ComplianceCase.id (linked compliance investigation)
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([policyNumber])
+  @@index([highMLRFlag])
+  @@index([reviewStatus])
+  @@index([coolingOffStatus])
+  @@index([createdAt])
+  @@index([customerId])
+  @@index([policyId])
+  @@index([caseId])
+}
+
+/// Broker/intermediary KYC records — insurance distribution chain due diligence
+model BrokerKYC {
+  id                    String   @id @default(cuid())
+  brokerName            String
+  tradeLicenseNumber    String
+  cbuaeRegistrationNo   String?
+  brokerType            String   // INDIVIDUAL, CORPORATE
+  riskRating            String   @default("medium")  // low, medium, high
+  status                String   @default("PENDING")  // PENDING, APPROVED, REJECTED, UNDER_REVIEW
+  applicationDate       DateTime @default(now())
+  approvalDate          DateTime?
+  approvedById          String?
+  reviewNotes           String?
+  sha256Hash            String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([brokerName])
+  @@index([status])
+  @@index([riskRating])
+  @@index([createdAt])
+}
+
+/// Premium financing audit trail — third-party payer and offshore financier monitoring
+model PremiumFinancingRecord {
+  id                    String   @id @default(cuid())
+  policyNumber          String
+  financierName         String
+  financierType         String   // BANK, OFFSHORE_FINANCIER, THIRD_PARTY
+  financingAmountAED    Float
+  isThirdPartyPayer     Boolean  @default(false)
+  isOffshoreFinancier   Boolean  @default(false)
+  isFlagged             Boolean  @default(false)
+  flagReason            String?
+  status                String   @default("PENDING_REVIEW")  // PENDING_REVIEW, APPROVED, REJECTED
+  reviewedById          String?
+  reviewedAt            DateTime?
+  reviewNotes           String?
+  sha256Hash            String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([policyNumber])
+  @@index([status])
+  @@index([isFlagged])
+  @@index([createdAt])
+}
+
+// ─── Phase E: Role-Specific Portals & Advanced Features Models ────────────────
+
+/// Secure document viewer with watermark tracking — Board portal compliance docs
+model BoardDocument {
+  id                String   @id @default(cuid())
+  title             String
+  documentType      String   // ANNUAL_COMPLIANCE_REPORT, RISK_APPETITE_STATEMENT, BOARD_MINUTES, POLICY_UPDATE
+  content           String?  // Document content/summary
+  fileUrl           String?  // Secure storage URL
+  status            String   @default("PUBLISHED")  // DRAFT, PUBLISHED, ARCHIVED
+  publishedAt       DateTime?
+  publishedBy       String?
+  watermarkEnabled  Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([documentType])
+  @@index([status])
+  @@index([publishedAt])
+}
+
+/// Board member digital acknowledgment — non-repudiable attestation with watermark
+model DigitalAcknowledgment {
+  id              String   @id @default(cuid())
+  documentId      String
+  userId          String
+  userName        String
+  userEmail       String
+  acknowledgedAt  DateTime @default(now())
+  ipAddress       String?
+  watermarkText   String?  // "UserName | UserEmail | Timestamp"
+  sha256Hash      String?
+  createdAt       DateTime @default(now())
+
+  @@index([documentId])
+  @@index([userId])
+  @@index([acknowledgedAt])
+}
+
+/// Compliance Manager system tuning sandbox — rule parameter change proposals
+model RuleTuningProposal {
+  id              String   @id @default(cuid())
+  title           String
+  description     String
+  parameterName   String   // e.g., "fuzzyMatchThreshold", "riskScoreWeight"
+  currentValue    String
+  proposedValue   String
+  simulationResult String?  // JSON: comparison output
+  status          String   @default("DRAFT")  // DRAFT, SIMULATED, PENDING_APPROVAL, APPROVED, REJECTED
+  proposedById    String
+  proposedByName  String?
+  approvedById    String?
+  approvedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([parameterName])
+  @@index([createdAt])
+}
+
+/// QA stratified random sampling — risk-based quality assurance case selection
+model QASample {
+  id              String   @id @default(cuid())
+  sampleBatchId   String   // Groups samples from the same sampling run
+  caseId          String
+  caseType        String   // alert, kyc, sar, tfs
+  riskLevel       String   // low, medium, high, critical
+  assignedOfficer String?
+  sampledAt       DateTime @default(now())
+  reviewStatus    String   @default("PENDING")  // PENDING, REVIEWED, DEFICIENT
+  reviewedById    String?
+  reviewedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([sampleBatchId])
+  @@index([caseType])
+  @@index([riskLevel])
+  @@index([reviewStatus])
+}
+
+/// QA finding with immutable scoring — audit-grade quality review results
+model QAReview {
+  id              String   @id @default(cuid())
+  sampleId        String
+  reviewerId      String
+  reviewerName    String?
+  accuracyScore   Int      @default(0)  // 0-100
+  timelinessScore Int      @default(0)  // 0-100
+  completenessScore Int    @default(0)  // 0-100
+  findings        String?  // JSON: detailed findings
+  isDeficient     Boolean  @default(false)
+  sha256Hash      String?
+  createdAt       DateTime @default(now())
+
+  @@index([sampleId])
+  @@index([reviewerId])
+  @@index([isDeficient])
+  @@index([createdAt])
+}
+
+/// Dept Head circular acknowledgment with SLA tracking — 5-day ack / 10-day action plan
+model DepartmentAcknowledgment {
+  id                String    @id @default(cuid())
+  circularId        String
+  departmentName    String
+  acknowledgedById  String
+  acknowledgedByName String?
+  acknowledgedAt    DateTime?
+  actionPlan        String?
+  actionPlanDueDate DateTime?
+  actionPlanSubmittedAt DateTime?
+  slaDeadlineAck    DateTime?  // 5 business days from circular
+  slaDeadlineAction DateTime?  // 10 business days from circular
+  slaStatus         String    @default("PENDING_ACK")  // PENDING_ACK, ACKNOWLEDGED, ACTION_PLAN_SUBMITTED, OVERDUE_ACK, OVERDUE_ACTION
+  escalatedToCCO    Boolean   @default(false)
+  escalatedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([circularId])
+  @@index([acknowledgedById])
+  @@index([slaStatus])
+  @@index([escalatedToCCO])
+}
+
+/// CAP Kanban board — corrective action tracking from audits, regulatory, and QA findings
+model CorrectiveActionPlan {
+  id                String   @id @default(cuid())
+  title             String
+  description       String
+  sourceType        String   // AUDIT_FINDING, REGULATORY_TRACKER, QA_FINDING
+  sourceReferenceId String?
+  priority          String   @default("medium")  // low, medium, high, critical
+  state             String   @default("TODO")  // TODO, IN_PROGRESS, REMEDIATED, AUDIT_VERIFIED
+  assignedToId      String?
+  assignedToName    String?
+  dueDate           DateTime?
+  remediatedAt      DateTime?
+  auditVerifiedAt   DateTime?
+  auditVerifiedById String?
+  auditVerifiedByName String?
+  verificationNotes String?
+  sha256Hash        String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([state])
+  @@index([priority])
+  @@index([sourceType])
+  @@index([assignedToId])
+  @@index([dueDate])
+}
+
+/// Source of Wealth / Source of Funds records — CBUAE Insurance AML high-risk product due diligence
+model SoWSoFRecord {
+  id                    String   @id @default(cuid())
+  caseId                String   // Link to ComplianceCase
+  sowDescription        String?  // Source of Wealth description
+  sofDescription        String?  // Source of Funds description
+  documentaryEvidence   Boolean  @default(false) // Whether documentary evidence has been provided
+  productRiskScore      Int      @default(5)  // Risk score of associated product (1-10)
+  isHighRisk            Boolean  @default(false)  // Derived: productRiskScore >= 7
+  status                String   @default("PENDING")  // PENDING, APPROVED, REJECTED, UNDER_REVIEW
+  approvedById          String?
+  approvedAt            DateTime?
+  reviewNotes           String?
+  createdBy             String?
+  sha256Hash            String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([caseId])
+  @@index([status])
+  @@index([isHighRisk])
+  @@index([createdAt])
+}
+
+/// P2 (Complaint Management) — minimal forward-compatible scaffold for CBUAE
+/// complaint-handling SLA tracking. The schema was signed off in P2 but the
+/// model was not yet persisted; this minimal version unblocks the P3 Step 2
+/// Predictive Risk Scoring engine (BREACHED Complaint SLA factor) and can be
+/// extended in a later sprint with full workflow fields.
+model Complaint {
+  id                    String   @id @default(cuid())
+  complaintNumber       String   @unique
+  subject               String
+  description           String
+  complaintType         String   // e.g. CUSTOMER, REGULATORY, INTERNAL, THIRD_PARTY
+  priority              String   @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  status                String   @default("NEW") // NEW, ACKNOWLEDGED, INVESTIGATING, RESOLVED, REJECTED, CLOSED
+  departmentId          String?  // department the complaint is assigned to
+  // CBUAE SLA fields
+  slaDeadlineAck        DateTime?   // 5 business days from creation
+  slaDeadlineResolution DateTime?   // 30 business days from creation
+  slaStatus             String   @default("WITHIN_SLA") // WITHIN_SLA, APPROACHING_BREACH, BREACHED, N/A
+  acknowledgedAt        DateTime?
+  resolvedAt            DateTime?
+  acknowledgedById      String?
+  resolvedById          String?
+  rejectionReason       String?
+  // Relational links (optional, nullable for flexibility)
+  policyId              String?
+  claimId               String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([departmentId])
+  @@index([status])
+  @@index([slaStatus])
+  @@index([createdAt])        // v7.3.0: ORDER BY createdAt DESC (list endpoint)
+  @@index([status, createdAt]) // v7.3.0: filter + sort composite (list endpoint)
+}
+
+/// P3 Step 2 — Predictive Risk Scoring. One row per department, refreshed by
+/// the nightly `calculate-department-risk` cron job. The `factors` JSON holds
+/// the per-factor breakdown (label / points / count / detail) so the UI can
+/// render a transparent heatmap drill-down.
+model DepartmentRiskScore {
+  id            String   @id @default(cuid())
+  departmentId  String   @unique
+  score         Int
+  calculatedAt  DateTime @default(now())
+  factors       Json     // breakdown of why the score is what it is
+}
+
+/// v7.3.0 — Unified My Tasks inbox. One row per actionable work item across
+/// the platform (ComplianceAlerts, Complaints, CAPs, SARs, Maker-Checker
+/// requests). Surfaced via GET /api/tasks/my-tasks. Backfilled from existing
+/// records by scripts/backfill-universal-tasks.mjs; new records are created
+/// on-demand by the relevant module APIs.
+model UniversalTask {
+  id              String   @id @default(cuid())
+  taskType        String   // ALERT | COMPLAINT | CAP | SAR | MAKER_CHECKER
+  sourceId        String   // FK to the source record (ComplianceAlert.id, Complaint.id, etc.)
+  sourceEntityType String  // 'ComplianceAlert' | 'Complaint' | 'CorrectiveActionPlan' | 'SARCase' | 'MakerCheckerLog'
+  title           String
+  description     String?
+  assignedToId    String?  // null = unassigned/pool
+  assignedToName  String?
+  priority        String   @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  status          String   @default("OPEN") // OPEN | IN_PROGRESS | DONE | CANCELLED
+  dueDate         DateTime?
+  sourceModule    String   // COMPLIANCE_ALERTS | COMPLAINTS | CAP | SAR | MAKER_CHECKER
+  isImmutable     Boolean  @default(false) // if true, cannot be cancelled from the inbox
+  sha256Hash      String?  // tamper-evidence (chain to source.sha256Hash)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([assignedToId, status, dueDate])
+  @@index([status, createdAt])
+  @@index([taskType, status])
+  @@unique([taskType, sourceId]) // one UniversalTask per source record
+}
+
+/// Policy & Procedure Management — version-controlled content body (Section 10.6)
+/// One row per version of a policy. The Policy model holds metadata;
+/// PolicyVersion holds the actual text content with section structure.
+model PolicyVersion {
+  id              String   @id @default(cuid())
+  policyId        String   // FK to Policy.id
+  version         String   // e.g. "1.0", "1.1", "2.0"
+  title           String
+  contentBody     String   // full markdown/text content of the policy
+  sections        String   // JSON array of {sectionNumber, heading, content}
+  changeLog       String?  // what changed in this version
+  authoredBy      String
+  reviewedBy      String?
+  approvedBy      String?
+  status          String   @default("draft") // draft | under_review | approved | published | superseded
+  effectiveDate   DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([policyId, version])
+  @@index([status])
+}
+
+/// Normalized insurance department with compliance ownership (Section 10.6)
+model Department {
+  id                String   @id @default(cuid())
+  name              String   @unique // Underwriting, Claims, Brokerage, Finance, IT, Compliance, Legal, HR
+  displayName       String
+  headUserId        String?  // FK to User.id (the Dept Head)
+  headName          String?
+  complianceScope   String   // "direct" | "indirect" AML/CFT involvement
+  description       String?
+  policyCount       Int      @default(0)
+  activeFindings    Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+/// Structured cross-reference: regulatory obligation → internal policy section
+/// Replaces the unstructured GapAnalysis.missingClauses text blob.
+model ObligationPolicyMapping {
+  id                String   @id @default(cuid())
+  obligationId      String   // FK to ExtractedObligation.id
+  circularId        String   // FK to RegulatoryCircular.id (denormalized for query efficiency)
+  policyId          String?  // FK to Policy.id (null if no matching policy = MISSING)
+  policySection     String?  // e.g. "Section 4.2"
+  coverageStatus    String   @default("MISSING") // COVERED | PARTIAL | MISSING
+  gapDescription    String?  // what's missing
+  remediationAction String?  // recommended fix
+  owner             String?  // responsible role/person
+  dueDate           DateTime?
+  status            String   @default("OPEN") // OPEN | IN_PROGRESS | REMEDIATED | ACCEPTED_RISK
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([obligationId])
+  @@index([circularId])
+  @@index([policyId])
+  @@index([coverageStatus])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Intelligence Engine — Phase 1-5 Models
+// AI-Powered Regulatory Intelligence Search with Dual-Master-Brain,
+// Action Center, Alerts/Watchlists, Agent Management & Executive Dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Intelligence items represent regulatory updates, enforcement actions,
+/// guidance notes, and other intelligence from GCC regulators.
+model IntelligenceItem {
+  id              String   @id @default(cuid())
+  title           String
+  summary         String
+  sourceName      String   // e.g. "SAMA", "CBUAE", "CBB"
+  sourceUrl       String?
+  category        String   // REGULATORY | ENFORCEMENT | GUIDANCE | ADVISORY | INDUSTRY
+  riskScore       Int      @default(0)   // 0-100
+  riskLevel       String   @default("LOW") // LOW | MEDIUM | HIGH | CRITICAL
+  credibility     String   @default("VERIFIED") // UNVERIFIED | PARTIALLY_VERIFIED | VERIFIED | OFFICIAL
+  jurisdictionId  String   // FK to GCC jurisdiction code: AE, SA, BH, QA, OM, KW
+  regulator       String?  // e.g. "SAMA", "CBUAE", "CBB", "QCB"
+  publishedDate   DateTime?
+  aiSummary       String?  // GLM-5.2 generated summary
+  aiVerified      Boolean  @default(false) // Qwen3.7-Plus verification
+  aiVerificationNotes String?
+  sourceLineage   String?  // JSON array of source chain
+  chainOfThought  String?  // JSON: AI reasoning trace
+  tags            String?  // JSON array of tags
+  status          String   @default("NEW") // NEW | REVIEWED | UNDER_ANALYSIS | ACTIONED | ARCHIVED
+  assignedToId    String?  // FK to User.id
+  assignedToName  String?
+  dueDate         DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  entities        IntelligenceEntity[]
+  policyMappings  IntelligencePolicyMapping[]
+  watchlistEntries WatchlistItem[]
+  actions         IntelligenceAction[]
+
+  @@index([jurisdictionId])
+  @@index([category])
+  @@index([riskLevel])
+  @@index([status])
+  @@index([assignedToId])
+  @@index([createdAt])
+}
+
+/// Named entities extracted from intelligence items (people, organizations, etc.)
+model IntelligenceEntity {
+  id                String   @id @default(cuid())
+  itemId            String   // FK to IntelligenceItem.id
+  name              String
+  type              String   // PERSON | ORGANIZATION | REGULATOR | FINANCIAL_INSTITUTION | COUNTRY
+  role              String?  // e.g. "Subject", "Issuer", "Counterparty"
+  riskContribution  Int      @default(0) // 0-100
+  metadata          String?  // JSON: additional entity data
+  createdAt         DateTime @default(now())
+
+  intelligenceItem  IntelligenceItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([type])
+  @@index([name])
+}
+
+/// Maps external regulatory intelligence to internal policies
+model IntelligencePolicyMapping {
+  id                String   @id @default(cuid())
+  itemId            String   // FK to IntelligenceItem.id
+  policyId          String?  // FK to Policy.id (null = no mapping = GAP)
+  policyNumber      String?
+  coverageStatus    String   @default("UNMAPPED") // UNMAPPED | PARTIAL | COVERED | GAP
+  impactAssessment  String?  // AI-generated impact summary
+  remediationAction String?
+  owner             String?
+  dueDate           DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  intelligenceItem  IntelligenceItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([policyId])
+  @@index([coverageStatus])
+}
+
+/// Saved searches for re-running intelligence queries
+model SavedSearch {
+  id            String   @id @default(cuid())
+  userId        String   // FK to User.id
+  name          String
+  query         String   // search terms
+  filters       String?  // JSON: {jurisdiction, category, riskLevel, credibility, dateRange}
+  resultCount   Int      @default(0)
+  lastRunAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+/// Alert rules created from saved searches
+model AlertRule {
+  id            String   @id @default(cuid())
+  userId        String   // FK to User.id
+  name          String
+  query         String   // search terms
+  filters       String?  // JSON: same as SavedSearch
+  frequency     String   @default("DAILY") // IMMEDIATE | DAILY | WEEKLY
+  isActive      Boolean  @default(true)
+  lastTriggered DateTime?
+  triggerCount  Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([isActive])
+  @@index([frequency])
+}
+
+/// Watchlist items — pinned IntelligenceItems or TrendSignals per user
+model WatchlistItem {
+  id            String   @id @default(cuid())
+  userId        String   // FK to User.id
+  itemType      String   // INTELLIGENCE_ITEM | TREND_SIGNAL
+  itemId        String   // FK to IntelligenceItem.id or TrendSignal.id
+  notes         String?
+  pinnedAt      DateTime @default(now())
+
+  intelligenceItem IntelligenceItem? @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  trendSignal      TrendSignal?      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemType, itemId])
+  @@index([userId])
+  @@index([itemType])
+}
+
+/// AI-detected trend signals from autonomous scanner
+model TrendSignal {
+  id              String   @id @default(cuid())
+  title           String
+  description     String
+  trendType       String   // EMERGING_REGULATION | ENFORCEMENT_TREND | INDUSTRY_SHIFT | CROSS_JURISDICTION | RISK_ESCALATION
+  severity        String   @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  confidence      Int      @default(0) // 0-100
+  jurisdictions   String?  // JSON array: ["AE","SA","BH"]
+  sources         String?  // JSON array: source references
+  chainOfThought  String?  // JSON: AI reasoning trace
+  aiModel         String   @default("GLM-5.2") // which AI generated this
+  verifiedBy      String?  // AI model that verified (Qwen3.7-Plus)
+  verificationStatus String @default("PENDING") // PENDING | VERIFIED | DISPUTED
+  validFrom       DateTime @default(now())
+  validTo         DateTime?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  watchlistItems WatchlistItem[]
+
+  @@index([trendType])
+  @@index([severity])
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+/// Intelligence actions — task assignments, Maker-Checker routing, status tracking
+model IntelligenceAction {
+  id              String   @id @default(cuid())
+  itemId          String   // FK to IntelligenceItem.id
+  actionType      String   // ASSIGN | ROUTE_TO_POLICY_OWNER | STATUS_CHANGE | ADD_NOTE | ESCALATE
+  assignedToId    String?  // FK to User.id
+  assignedToName  String?
+  assignedBy      String
+  assignedByRole  String
+  statusFrom      String?  // previous status
+  statusTo        String?  // new status
+  notes           String?
+  dueDate         DateTime?
+  policyMappingId String?  // FK to IntelligencePolicyMapping.id (for ROUTE_TO_POLICY_OWNER)
+  makerCheckerId  String?  // FK to MakerCheckerLog.id (if routed to Maker-Checker)
+  aiImpactSummary String?  // AI-generated impact summary for routing
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+
+  intelligenceItem IntelligenceItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([assignedToId])
+  @@index([actionType])
+  @@index([createdAt])
+}
+
+/// Autonomous Agent scan logs
+model AgentScanLog {
+  id              String   @id @default(cuid())
+  scanType        String   // SCHEDULED | MANUAL | TRIGGERED
+  jurisdictionId  String?  // null = all jurisdictions
+  topic           String?  // specific topic searched
+  sourcesQueried  String?  // JSON array of sources queried
+  sourcesIgnored  String?  // JSON array of sources filtered out
+  itemsFound      Int      @default(0)
+  itemsIngested   Int      @default(0)
+  trendSignalsGenerated Int @default(0)
+  confidenceThreshold Int  @default(50) // minimum confidence to include
+  riskThreshold   Int      @default(50) // minimum risk score to include
+  status          String   @default("RUNNING") // RUNNING | COMPLETED | FAILED | CANCELLED
+  duration        Int?     // milliseconds
+  error           String?  // error message if failed
+  triggeredBy     String   // userId or "system"
+  aiModel         String   @default("GLM-5.2")
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+
+  @@index([jurisdictionId])
+  @@index([status])
+  @@index([startedAt])
+  @@index([scanType])
+}
+
+/// Agent configuration (tuning parameters)
+model AgentConfig {
+  id                    String   @id @default(cuid())
+  isScannerActive       Boolean  @default(true)
+  scanIntervalMinutes   Int      @default(60)
+  confidenceThreshold   Int      @default(50)
+  riskThreshold         Int      @default(70) // only alert on risk > 70
+  maxItemsPerScan       Int      @default(50)
+  enabledJurisdictions  String?  // JSON array: ["AE","SA","BH","QA","OM","KW"]
+  enabledSources        String?  // JSON array of enabled source names
+  updatedBy             String?  // userId
+  updatedAt             DateTime @updatedAt
+}
+
+/// Export audit log (WORM compliance)
+model IntelligenceExport {
+  id            String   @id @default(cuid())
+  userId        String
+  userName      String
+  userRole      String
+  exportType    String   // PDF | CSV | JSON
+  exportScope   String   // SEARCH_RESULTS | WATCHLIST | EXECUTIVE_BRIEFING | TREND_REPORT
+  recordCount   Int      @default(0)
+  filters       String?  // JSON: applied filters
+  jurisdiction  String?  // jurisdiction scope
+  fileName      String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([exportType])
+  @@index([createdAt])
+}
