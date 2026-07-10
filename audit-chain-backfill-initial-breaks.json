@@ -1,0 +1,82 @@
+{
+  "_comment": "Historical record of the FIRST backfill run (live, not dry-run). The on-disk audit-chain-backfill-report.json was overwritten by the second (idempotent verification) run, which found 0 breaks. This file preserves a sample of the original break entries for auditors. Full break list (27 entries) is in the agent's session output and the worklog.",
+  "algorithm": "sha256-chain-v2",
+  "ranAt": "2026-06-18T14:29Z",
+  "dryRun": false,
+  "totalRows": 51,
+  "breaksCount": 27,
+  "rowsUpdated": 51,
+  "chainHeadHash": "4f7b2baf6a558a70bc50add5483227615e84f04d1ce4f1f0881b741228c771b8",
+  "sampleBreaks": [
+    {
+      "id": "cmqidz55b0002ozspi52kt3t9",
+      "reason": "OLD_HASH_MISMATCH",
+      "oldHash": "4ed2276aef16b0f6329443f7eeed9dae4fa977f6c03bdb0232180784225d006b",
+      "newHash": "1926ee01afcfcc62f5b19b3bcce34f9aa5fb4a7062962b69d9b94b32837b7d22",
+      "previousHash": "1a6f097948105e7c76f0bf293b42d94117d97fbfd456f5c2a9cb4cebf25c0d72",
+      "createdAt": "2026-06-17T18:10:16.656Z",
+      "action": "CIRCULAR_EXTRACT",
+      "resource": "IngestionLog"
+    },
+    {
+      "id": "cmqidzecu000cozspe5j2p6gl",
+      "reason": "OLD_HASH_MISMATCH",
+      "oldHash": "188225dc83635621dd2c70d582db63ce1bbe78d66041af9ca5bce55a6ba292f5",
+      "newHash": "655631b33be2ae1582ad9c87c306a983652354b4546797d4ba149c14cdfe302c",
+      "previousHash": "1926ee01afcfcc62f5b19b3bcce34f9aa5fb4a7062962b69d9b94b32837b7d22",
+      "createdAt": "2026-06-17T18:10:28.590Z",
+      "action": "CIRCULAR_COMMIT",
+      "resource": "RegulatoryCircular"
+    },
+    {
+      "id": "cmqidznr9000dozspnov0z1g8",
+      "reason": "OLD_HASH_MISMATCH",
+      "oldHash": "14923401c9793e58e9169617ca916bf13dce0a942cd0352bcf885dbfb595121b",
+      "newHash": "4221a61d66ad4342159aedff4a8d941365c99a2202d1957c3ac9a02ebd6bbcfd",
+      "previousHash": "655631b33be2ae1582ad9c87c306a983652354b4546797d4ba149c14cdfe302c",
+      "createdAt": "2026-06-17T18:10:40.774Z",
+      "action": "SCRAPER_TRIGGER_BLOCKED",
+      "resource": "IngestionSource"
+    },
+    {
+      "id": "cmqidznsb000fozspo7kiynh4",
+      "reason": "OLD_HASH_MISMATCH",
+      "oldHash": "01b4d37a113242346257016b05d5a5aec9f738c77bd1b8f8de7ce6e8bb988431",
+      "newHash": "7aea01d7729da5cb0c30b3b34d0b79427d988ecabfb298ceed29fdbe256a6719",
+      "previousHash": "4221a61d66ad4342159aedff4a8d941365c99a2202d1957c3ac9a02ebd6bbcfd",
+      "createdAt": "2026-06-17T18:10:40.812Z",
+      "action": "INGESTION_SOURCE_CREATED",
+      "resource": "IngestionSource"
+    },
+    {
+      "id": "cmqie98wb000hozspnxc1nyqd",
+      "reason": "OLD_HASH_MISMATCH",
+      "oldHash": "80302ac457a15f9a7ede60db9c7b9a9f16f8188068f720ac34e763b6894c87cd",
+      "newHash": "b808d2ecb7e1440d652fa0d6ab21bf97c4a3a9d84821dcea85b4e3a812768865",
+      "previousHash": "7aea01d7729da5cb0c30b3b34d0b79427d988ecabfb298ceed29fdbe256a6719",
+      "createdAt": "2026-06-17T18:18:08.076Z",
+      "action": "CIRCULAR_UPLOAD",
+      "resource": "IngestionLog"
+    },
+    {
+      "id": "cmqie9ou6000iozspnm7agaka",
+      "reason": "OLD_HASH_MISMATCH",
+      "oldHash": "fbced35fe740675b5d282a1c0218c30e40e04282ec1014b984c33588bfd4284f",
+      "newHash": "02254456b2ca477140937aeb4b24619a241ff903f19686a06223f471c75be237",
+      "previousHash": "b808d2ecb7e1440d652fa0d6ab21bf97c4a3a9d84821dcea85b4e3a812768865",
+      "createdAt": "2026-06-17T18:18:28.734Z",
+      "action": "CIRCULAR_EXTRACT",
+      "resource": "IngestionLog"
+    },
+    {
+      "id": "cmqieabft000xozspzzc7n371",
+      "reason": "OLD_HASH_MISMATCH",
+      "oldHash": "9fec206266b7ea91b3cc98906a70c8514a0c15c13ba05183d0dc3c22ac7f2252",
+      "newHash": "4f7b2baf6a558a70bc50add5483227615e84f04d1ce4f1f0881b741228c771b8",
+      "previousHash": "02254456b2ca477140937aeb4b24619a241ff903f19686a06223f471c75be237",
+      "createdAt": "2026-06-17T18:18:58.025Z",
+      "action": "CIRCULAR_COMMIT",
+      "resource": "RegulatoryCircular"
+    }
+  ]
+}

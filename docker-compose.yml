@@ -1,0 +1,127 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# IC-OS v7.2 — Full Stack Docker Compose
+# Framework: Next.js 16 (App Router, standalone output)
+# Runtime: Bun
+# Database: SQLite via Prisma
+# AI: Ollama (inference) + Qdrant (vector DB)
+# Proxy: Caddy (TLS termination)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Usage:
+#   docker compose build
+#   docker compose up -d
+#   docker compose exec icos-app bunx tsx prisma/seed.ts   # Seed the database
+#   docker compose logs -f icos-app                         # View logs
+#   docker compose down                                      # Stop
+#
+# For AI infrastructure only (no app):
+#   docker compose -f docker-compose.ai.yml up -d
+#
+# ═══════════════════════════════════════════════════════════════════════════════
+
+version: '3.8'
+
+services:
+  # ── IC-OS Application ────────────────────────────────────────────────────────
+  icos-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: icos-app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:./db/custom.db
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-me-in-production}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - AI_GATEWAY_URL=http://localhost:8000
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_URL=http://ollama:11434
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - ENABLE_MAKER_CHECKER=true
+      - ENABLE_AI_CHAT=true
+      - ENABLE_PII_MASKING=true
+      - DATA_RESIDENCY_REGION=me-central-1
+      - ZAI_API_KEY=${ZAI_API_KEY:-}
+    volumes:
+      - icos-db:/app/db
+      - icos-uploads:/app/uploads
+    depends_on:
+      ollama:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── Ollama: AI Model Inference Engine (5-Brain Architecture) ─────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: icos-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Uncomment for GPU support (requires NVIDIA Container Toolkit)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── Qdrant: Vector Database (RAG "Memory") ───────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: icos-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Caddy: Reverse Proxy & TLS Termination ───────────────────────────────────
+  caddy:
+    image: caddy:2
+    container_name: icos-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - icos-app
+    restart: unless-stopped
+
+volumes:
+  icos-db:
+  icos-uploads:
+  ollama_data:
+  qdrant_data:
+  caddy_data:
+  caddy_config:
