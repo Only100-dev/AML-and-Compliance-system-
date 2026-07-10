@@ -1,0 +1,247 @@
+'use client';
+
+import React, { Suspense, lazy } from 'react';
+import { ThemeProvider } from 'next-themes';
+import { QueryProvider } from '@/components/providers/QueryProvider';
+import { Sidebar } from '@/components/ic-os/layout/Sidebar';
+import { TopBar } from '@/components/ic-os/layout/TopBar';
+import { useICOSStore } from '@/lib/store';
+import { AIAssistantWidget } from '@/components/AIAssistantWidget';
+import { ErrorBoundary, ModuleErrorBoundary } from '@/components/shared/ErrorBoundary';
+
+// Lazy-load all section components to reduce initial bundle size and memory usage
+const CommandCenter = lazy(() => import('@/components/ic-os/dashboard/CommandCenter').then(m => ({ default: m.CommandCenter })));
+const RegulatoryIntelligence = lazy(() => import('@/components/ic-os/regulatory/RegulatoryIntelligence').then(m => ({ default: m.RegulatoryIntelligence })));
+const AMLSanctionsTriage = lazy(() => import('@/components/ic-os/aml/AMLSanctionsTriage').then(m => ({ default: m.AMLSanctionsTriage })));
+const EvidenceWarRoom = lazy(() => import('@/components/ic-os/evidence/EvidenceWarRoom').then(m => ({ default: m.EvidenceWarRoom })));
+const ClaimsPortals = lazy(() => import('@/components/ic-os/claims/ClaimsPortals').then(m => ({ default: m.ClaimsPortals })));
+const AuditTrail = lazy(() => import('@/components/ic-os/shared/AuditTrail').then(m => ({ default: m.AuditTrail })));
+const RiskMatrix = lazy(() => import('@/components/ic-os/shared/RiskMatrix').then(m => ({ default: m.RiskMatrix })));
+const PoliciesSOPs = lazy(() => import('@/components/ic-os/policies/PoliciesSOPs').then(m => ({ default: m.PoliciesSOPs })));
+const LaborLawCompliance = lazy(() => import('@/components/ic-os/labor/LaborLawCompliance').then(m => ({ default: m.LaborLawCompliance })));
+const CBUAERegulatoryTracker = lazy(() => import('@/components/ic-os/regulatory/CBUAERegulatoryTracker').then(m => ({ default: m.CBUAERegulatoryTracker })));
+const LegalAdvisory = lazy(() => import('@/components/ic-os/legal/LegalAdvisory').then(m => ({ default: m.LegalAdvisory })));
+const TrainingCertifications = lazy(() => import('@/components/ic-os/training/TrainingCertifications').then(m => ({ default: m.TrainingCertifications })));
+const ComplianceAudits = lazy(() => import('@/components/ic-os/audits/ComplianceAudits').then(m => ({ default: m.ComplianceAudits })));
+const GoAMLFilingCenter = lazy(() => import('@/components/ic-os/goaml/GoAMLFilingCenter').then(m => ({ default: m.GoAMLFilingCenter })));
+const MakerCheckerQueue = lazy(() => import('@/components/ic-os/maker-checker/MakerCheckerQueue').then(m => ({ default: m.MakerCheckerQueue })));
+const AdverseMediaSearch = lazy(() => import('@/components/ic-os/adverse-media/AdverseMediaSearch').then(m => ({ default: m.AdverseMediaSearch })));
+const CorporateKYCWizard = lazy(() => import('@/components/ic-os/kyc/CorporateKYCWizard').then(m => ({ default: m.CorporateKYCWizard })));
+const IndividualKYCWizard = lazy(() => import('@/components/ic-os/kyc/IndividualKYCWizard').then(m => ({ default: m.IndividualKYCWizard })));
+const AIAgentManagement = lazy(() => import('@/components/ic-os/ai-agent/AIAgentManagement').then(m => ({ default: m.AIAgentManagement })));
+const QuarterlyReporting = lazy(() => import('@/components/ic-os/reporting/QuarterlyReporting').then(m => ({ default: m.QuarterlyReporting })));
+const AMLSelfAssessment = lazy(() => import('@/components/ic-os/aml-assessment/AMLSelfAssessment').then(m => ({ default: m.AMLSelfAssessment })));
+const AdvancedAnalytics = lazy(() => import('@/components/ic-os/analytics/AdvancedAnalytics').then(m => ({ default: m.AdvancedAnalytics })));
+const ThemeSettings = lazy(() => import('@/components/ic-os/theme/ThemeSettings').then(m => ({ default: m.ThemeSettings })));
+const SecurityDashboard = lazy(() => import('@/components/ic-os/security/SecurityDashboard').then(m => ({ default: m.SecurityDashboard })));
+const HelpDocumentation = lazy(() => import('@/components/ic-os/help/HelpDocumentation').then(m => ({ default: m.HelpDocumentation })));
+// Phase 5 — Knowledge Base (Part 4 Tier 2/3/4)
+const KnowledgeBase = lazy(() => import('@/components/ic-os/knowledge-base/KnowledgeBase').then(m => ({ default: m.KnowledgeBase })));
+const TrainingEffectiveness = lazy(() => import('@/components/ic-os/training/TrainingEffectiveness').then(m => ({ default: m.TrainingEffectiveness })));
+const UBOVisualization = lazy(() => import('@/components/ic-os/kyc/UBOVisualization').then(m => ({ default: m.UBOVisualization })));
+const CBUAESubmissionCheckerPage = lazy(() => import('@/components/ic-os/compliance/CBUAESubmissionChecker').then(m => ({ default: m.CBUAESubmissionCheckerPage })));
+const UnifiedWorkspace = lazy(() => import('@/components/ic-os/investigations/UnifiedWorkspace').then(m => ({ default: m.UnifiedWorkspace })));
+const CommandMenu = lazy(() => import('@/components/shared/CommandMenu').then(m => ({ default: m.CommandMenu })));
+// Phase 5 — Post-login System Introduction / Welcome Tour (Part 6)
+const SystemIntroduction = lazy(() => import('@/components/shared/SystemIntroduction').then(m => ({ default: m.SystemIntroduction })));
+
+// UAT & Release modules
+const UATHandoverPackage = lazy(() => import('@/components/ic-os/uat/UATHandoverPackage').then(m => ({ default: m.UATHandoverPackage })));
+const IngestionEngine = lazy(() => import('@/components/ic-os/ingestion/IngestionEngine').then(m => ({ default: m.IngestionEngine })));
+
+// v7.3.0-uat-hotfix-1 — P1 restoration: re-wire sections whose render cases were
+// silently deleted by P2 commit ec4c992 (see RCA_P2_REGRESSION.md). Components
+// already existed on disk; only the lazy imports + switch cases were missing.
+const VendorManagement = lazy(() => import('@/components/ic-os/tprm/VendorManagement').then(m => ({ default: m.VendorManagement })));
+const UploadBordereaux = lazy(() => import('@/components/ic-os/bordereaux/UploadBordereaux').then(m => ({ default: m.UploadBordereaux })));
+const ResiliencyHub = lazy(() => import('@/components/ic-os/resiliency/ResiliencyHub').then(m => ({ default: m.ResiliencyHub })));
+const UserSettings = lazy(() => import('@/components/ic-os/settings/UserSettings').then(m => ({ default: m.UserSettings })));
+const AdminPanel = lazy(() => import('@/components/ic-os/admin/AdminPanel').then(m => ({ default: m.AdminPanel })));
+
+// v7.3.0-uat-hotfix-5 — P1 restoration: 7 core sections whose sidebar items,
+// lazy imports, AND switch cases were all silently deleted by P2 commit ec4c992
+// (see RCA_P2_REGRESSION.md §5.2). These are the operational backbone of the
+// platform: unified inbox, CAPs, alerts, circular acks, attestations, board
+// docs, and the Regulator-in-a-Box evidence generator. Component files existed
+// on disk throughout the regression window; only the wiring was lost.
+const MyTasks = lazy(() => import('@/components/ic-os/tasks/MyTasks').then(m => ({ default: m.MyTasks })));
+const CAPKanban = lazy(() => import('@/components/ic-os/cap/CAPKanban').then(m => ({ default: m.CAPKanban })));
+const ComplianceAlerts = lazy(() => import('@/components/ic-os/alerts/ComplianceAlerts').then(m => ({ default: m.ComplianceAlerts })));
+const DeptHeadInbox = lazy(() => import('@/components/ic-os/dept-head/DeptHeadInbox').then(m => ({ default: m.DeptHeadInbox })));
+const PolicyAttestations = lazy(() => import('@/components/ic-os/attestations/PolicyAttestations').then(m => ({ default: m.PolicyAttestations })));
+const BoardPortal = lazy(() => import('@/components/ic-os/board/BoardPortal').then(m => ({ default: m.BoardPortal })));
+const DataRoomGenerator = lazy(() => import('@/components/ic-os/data-room/DataRoomGenerator').then(m => ({ default: m.DataRoomGenerator })));
+
+// Loading fallback
+function SectionLoader() {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-emerald border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-muted-foreground">Loading module...</p>
+      </div>
+    </div>
+  );
+}
+
+function AppContent() {
+  const { activeSection, activePersona } = useICOSStore();
+
+  const renderSection = () => {
+    switch (activeSection) {
+      case 'command-center':
+        return <ModuleErrorBoundary moduleName="Command Center"><CommandCenter /></ModuleErrorBoundary>;
+      case 'regulatory-intelligence':
+        return <ModuleErrorBoundary moduleName="Regulatory Intelligence"><RegulatoryIntelligence /></ModuleErrorBoundary>;
+      case 'aml-sanctions':
+        return <ModuleErrorBoundary moduleName="AML & Sanctions Triage"><AMLSanctionsTriage /></ModuleErrorBoundary>;
+      case 'evidence-war-room':
+        return <ModuleErrorBoundary moduleName="Evidence War Room"><EvidenceWarRoom /></ModuleErrorBoundary>;
+      case 'claims-portals':
+        return <ModuleErrorBoundary moduleName="Claims Portals"><ClaimsPortals persona={activePersona} /></ModuleErrorBoundary>;
+      case 'regulatory-tracker':
+        return <ModuleErrorBoundary moduleName="CBUAE Regulatory Tracker"><CBUAERegulatoryTracker /></ModuleErrorBoundary>;
+      case 'policies-sops':
+        return <ModuleErrorBoundary moduleName="Policies & SOPs"><PoliciesSOPs /></ModuleErrorBoundary>;
+      case 'labor-law':
+        return <ModuleErrorBoundary moduleName="Labor Law Compliance"><LaborLawCompliance /></ModuleErrorBoundary>;
+      case 'legal-advisory':
+        return <ModuleErrorBoundary moduleName="Legal Advisory"><LegalAdvisory /></ModuleErrorBoundary>;
+      case 'training-certifications':
+        return <ModuleErrorBoundary moduleName="Training & Certifications"><TrainingCertifications /></ModuleErrorBoundary>;
+      case 'compliance-audits':
+        return <ModuleErrorBoundary moduleName="Compliance Audits"><ComplianceAudits /></ModuleErrorBoundary>;
+      case 'adverse-media':
+        return <ModuleErrorBoundary moduleName="Adverse Media Search"><AdverseMediaSearch /></ModuleErrorBoundary>;
+      case 'goaml-filing':
+        return <ModuleErrorBoundary moduleName="goAML Filing Center"><GoAMLFilingCenter /></ModuleErrorBoundary>;
+      case 'maker-checker':
+        return <ModuleErrorBoundary moduleName="Maker-Checker Queue"><MakerCheckerQueue /></ModuleErrorBoundary>;
+      case 'corporate-kyc':
+        return <ModuleErrorBoundary moduleName="Corporate KYC"><CorporateKYCWizard /></ModuleErrorBoundary>;
+      case 'individual-kyc':
+        return <ModuleErrorBoundary moduleName="Individual KYC"><IndividualKYCWizard /></ModuleErrorBoundary>;
+      case 'ai-agent':
+        return <ModuleErrorBoundary moduleName="AI Agent Management"><AIAgentManagement /></ModuleErrorBoundary>;
+      case 'quarterly-reporting':
+        return <ModuleErrorBoundary moduleName="Quarterly Reporting"><QuarterlyReporting /></ModuleErrorBoundary>;
+      case 'aml-assessment':
+        return <ModuleErrorBoundary moduleName="AML Self-Assessment"><AMLSelfAssessment /></ModuleErrorBoundary>;
+      case 'advanced-analytics':
+        return <ModuleErrorBoundary moduleName="Advanced Analytics"><AdvancedAnalytics /></ModuleErrorBoundary>;
+      case 'theme-settings':
+        return <ModuleErrorBoundary moduleName="Theme Settings"><ThemeSettings /></ModuleErrorBoundary>;
+      case 'security-center':
+        return <ModuleErrorBoundary moduleName="Security Dashboard"><SecurityDashboard /></ModuleErrorBoundary>;
+      case 'audit-trail':
+        return <ModuleErrorBoundary moduleName="Audit Trail"><AuditTrail /></ModuleErrorBoundary>;
+      case 'risk-matrix':
+        return <ModuleErrorBoundary moduleName="Risk Matrix"><RiskMatrix /></ModuleErrorBoundary>;
+      case 'help-docs':
+        return <ModuleErrorBoundary moduleName="Help & Documentation"><HelpDocumentation /></ModuleErrorBoundary>;
+      case 'knowledge-base':
+        return <ModuleErrorBoundary moduleName="Knowledge Base"><KnowledgeBase /></ModuleErrorBoundary>;
+      case 'training-effectiveness':
+        return <ModuleErrorBoundary moduleName="Training Effectiveness"><TrainingEffectiveness /></ModuleErrorBoundary>;
+      case 'ubo-visualization':
+        return <ModuleErrorBoundary moduleName="UBO Visualization"><UBOVisualization /></ModuleErrorBoundary>;
+      case 'cbuae-submission-checker':
+        return <ModuleErrorBoundary moduleName="CBUAE Submission Checker"><CBUAESubmissionCheckerPage /></ModuleErrorBoundary>;
+      case 'unified-workspace':
+        return <ModuleErrorBoundary moduleName="Unified Investigation Workspace"><UnifiedWorkspace /></ModuleErrorBoundary>;
+      case 'uat-handover':
+        return <ModuleErrorBoundary moduleName="UAT Handover Package"><UATHandoverPackage /></ModuleErrorBoundary>;
+      case 'ingestion-engine':
+        return <ModuleErrorBoundary moduleName="Regulatory Circular Ingestion Engine"><IngestionEngine /></ModuleErrorBoundary>;
+      // v7.3.0-uat-hotfix-1 — P1 restoration: render cases silently deleted by
+      // P2 commit ec4c992. Restored so the 5 sidebar items no longer fall
+      // through to the default <CommandCenter/> (see RCA_P2_REGRESSION.md).
+      // user-settings & admin-settings render here in Batch 1; their mock→real
+      // API rewiring is Batch 2 (tag v7.3.0-uat-hotfix-2).
+      case 'vendor-management':
+        return <ModuleErrorBoundary moduleName="Vendor Risk Management"><VendorManagement /></ModuleErrorBoundary>;
+      case 'resiliency-hub':
+        return <ModuleErrorBoundary moduleName="Resiliency Hub"><ResiliencyHub /></ModuleErrorBoundary>;
+      case 'bordereaux-validation':
+        return <ModuleErrorBoundary moduleName="Bordereaux Validation"><UploadBordereaux /></ModuleErrorBoundary>;
+      case 'user-settings':
+        return <ModuleErrorBoundary moduleName="My Profile"><UserSettings /></ModuleErrorBoundary>;
+      case 'admin-settings':
+        return <ModuleErrorBoundary moduleName="Admin Panel"><AdminPanel /></ModuleErrorBoundary>;
+      // v7.3.0-uat-hotfix-5 — P1 restoration: 7 sections whose sidebar items +
+      // render cases were both deleted by P2 commit ec4c992 (RCA §5.2). These
+      // are core compliance workflows required for UAT — not new features.
+      case 'my-tasks':
+        return <ModuleErrorBoundary moduleName="My Tasks"><MyTasks /></ModuleErrorBoundary>;
+      case 'cap-kanban':
+        return <ModuleErrorBoundary moduleName="CAP Kanban Board"><CAPKanban /></ModuleErrorBoundary>;
+      case 'compliance-alerts':
+        return <ModuleErrorBoundary moduleName="Compliance Alerts"><ComplianceAlerts /></ModuleErrorBoundary>;
+      case 'dept-head-inbox':
+        return <ModuleErrorBoundary moduleName="Department Head Inbox"><DeptHeadInbox /></ModuleErrorBoundary>;
+      case 'policy-attestations':
+        return <ModuleErrorBoundary moduleName="Policy Attestations"><PolicyAttestations /></ModuleErrorBoundary>;
+      case 'board-portal':
+        return <ModuleErrorBoundary moduleName="Board Portal"><BoardPortal /></ModuleErrorBoundary>;
+      case 'data-room':
+        return <ModuleErrorBoundary moduleName="Audit Data-Room Generator"><DataRoomGenerator /></ModuleErrorBoundary>;
+      default:
+        return <ModuleErrorBoundary moduleName="Command Center"><CommandCenter /></ModuleErrorBoundary>;
+    }
+  };
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-background">
+      <Sidebar />
+      <div className="flex flex-col flex-1 min-w-0">
+        <TopBar />
+        <ErrorBoundary module="AppContent">
+          <main className="flex-1 overflow-y-auto custom-scrollbar ledger-grid">
+            <div className="p-4 lg:p-6">
+              <Suspense fallback={<SectionLoader />}>
+                {renderSection()}
+              </Suspense>
+            </div>
+          </main>
+        </ErrorBoundary>
+        {/* Footer */}
+        <footer className="h-8 border-t border-border bg-card/80 backdrop-blur-sm flex items-center justify-between px-4 text-[10px] text-muted-foreground shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald animate-pulse" />
+            <span>IC-OS v7.2.0-uat-ready • RCM Ingestion Engine Live • me-central-1</span>
+          </div>
+          <div className="hidden sm:flex items-center gap-3">
+            <span>AI: z-ai-web-dev-sdk</span>
+            <span>•</span>
+            <span>SHA-256 Audit Trail Active</span>
+            <span>•</span>
+            <span>FDL 10/2025 & CR 134/2025 Compliant</span>
+          </div>
+        </footer>
+      </div>
+
+      {/* AI Assistant Floating Widget */}
+      <AIAssistantWidget />
+
+      {/* Command Palette (Ctrl+K / Cmd+K) */}
+      <Suspense fallback={null}>
+        <CommandMenu />
+      </Suspense>
+
+      {/* Phase 5 — Post-login System Introduction / Welcome Tour (Part 6) */}
+      <Suspense fallback={null}>
+        <SystemIntroduction />
+      </Suspense>
+    </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+      <QueryProvider>
+        <AppContent />
+      </QueryProvider>
+    </ThemeProvider>
+  );
+}

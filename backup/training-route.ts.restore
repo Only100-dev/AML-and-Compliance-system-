@@ -1,0 +1,266 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
+import { authGuard } from '@/lib/auth-guard';
+import { createAuditLog } from '@/lib/audit';
+import { validateBody, validateSearchParams } from '@/lib/validate';
+import {
+  TrainingCourseCreateSchema,
+  TrainingEnrollmentCreateSchema,
+  TrainingUpdateSchema,
+  TrainingQuerySchema,
+} from '@/lib/validations/training';
+import { checkRateLimit, getClientIdentifier, RATE_LIMITS } from '@/lib/rate-limit';
+
+// GET /api/training - Fetch training courses or enrollments
+export async function GET(request: NextRequest) {
+  try {
+    const auth = await authGuard();
+    if (!auth.authorized) return auth.error;
+
+    const rateLimit = checkRateLimit(getClientIdentifier(request), RATE_LIMITS.READ);
+    if (!rateLimit.allowed) return rateLimit.error;
+
+    const { searchParams } = new URL(request.url);
+    const paramValidation = validateSearchParams(TrainingQuerySchema, searchParams);
+    if (!paramValidation.success) return paramValidation.error;
+
+    const { type, category, status } = paramValidation.data;
+
+    if (type === 'enrollments') {
+      const where: Record<string, unknown> = {};
+      if (status) where.status = status;
+
+      const enrollments = await db.trainingEnrollment.findMany({
+        where,
+        orderBy: { enrolledAt: 'desc' },
+      });
+
+      return NextResponse.json({ success: true, data: enrollments });
+    }
+
+    // Default: courses
+    const where: Record<string, unknown> = {};
+    if (category) where.category = category;
+    if (status) where.status = status;
+
+    const courses = await db.trainingCourse.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return NextResponse.json({ success: true, data: courses });
+  } catch (error) {
+    console.error('Failed to fetch training data:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch training data' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/training - Create a training course or enrollment
+export async function POST(request: NextRequest) {
+  try {
+    const auth = await authGuard({ allowedRoles: ['admin', 'compliance_manager', 'compliance_officer', 'dept_head'] });
+    if (!auth.authorized) return auth.error;
+
+    const rateLimit = checkRateLimit(getClientIdentifier(request), RATE_LIMITS.WRITE);
+    if (!rateLimit.allowed) return rateLimit.error;
+
+    const body = await request.json();
+    const type = body.type || 'course';
+    const userId = (auth.session?.user as Record<string, unknown>)?.userId as string || 'system';
+
+    if (type === 'enrollment') {
+      const validation = await validateBody(TrainingEnrollmentCreateSchema, body);
+      if (!validation.success) return validation.error;
+
+      const enrollment = await db.trainingEnrollment.create({
+        data: {
+          courseId: validation.data.courseId,
+          userId: validation.data.userId,
+          userName: validation.data.userName,
+          department: validation.data.department,
+          status: validation.data.status || 'enrolled',
+          enrolledAt: validation.data.enrolledAt || new Date(),
+          completedAt: validation.data.completedAt || undefined,
+          expiryDate: validation.data.expiryDate || undefined,
+          score: validation.data.score ?? undefined,
+          certificateUrl: validation.data.certificateUrl || undefined,
+        },
+      });
+
+      await createAuditLog({
+        userId,
+        action: 'TRAINING_ENROLLMENT_CREATED',
+        resourceType: 'TrainingEnrollment',
+        resourceId: enrollment.id,
+        details: `${validation.data.userName} enrolled in course ${validation.data.courseId}`,
+      });
+
+      return NextResponse.json({ success: true, data: enrollment }, { status: 201 });
+    }
+
+    // Default: create course
+    const validation = await validateBody(TrainingCourseCreateSchema, body);
+    if (!validation.success) return validation.error;
+
+    const course = await db.trainingCourse.create({
+      data: {
+        title: validation.data.title,
+        category: validation.data.category,
+        provider: validation.data.provider || undefined,
+        durationHours: validation.data.durationHours ?? 0,
+        isMandatory: validation.data.isMandatory ?? false,
+        targetAudience: validation.data.targetAudience || undefined,
+        certification: validation.data.certification ?? false,
+        validForMonths: validation.data.validForMonths ?? 12,
+        status: validation.data.status || 'active',
+      },
+    });
+
+    await createAuditLog({
+      userId,
+      action: 'TRAINING_COURSE_CREATED',
+      resourceType: 'TrainingCourse',
+      resourceId: course.id,
+      details: `Training course "${course.title}" created`,
+    });
+
+    return NextResponse.json({ success: true, data: course }, { status: 201 });
+  } catch (error) {
+    console.error('Failed to create training data:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to create training data' },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT /api/training - Update a training course or enrollment
+export async function PUT(request: NextRequest) {
+  try {
+    const auth = await authGuard({ allowedRoles: ['admin', 'compliance_manager', 'compliance_officer', 'dept_head'] });
+    if (!auth.authorized) return auth.error;
+
+    const rateLimit = checkRateLimit(getClientIdentifier(request), RATE_LIMITS.WRITE);
+    if (!rateLimit.allowed) return rateLimit.error;
+
+    const body = await request.json();
+
+    // Validate with Zod schema
+    const validation = await validateBody(TrainingUpdateSchema, body);
+    if (!validation.success) return validation.error;
+
+    const { id, type, ...data } = validation.data;
+    const userId = (auth.session?.user as Record<string, unknown>)?.userId as string || 'system';
+
+    if (type === 'enrollment') {
+      const allowedFields = ['userId', 'userName', 'department', 'status', 'enrolledAt', 'completedAt', 'expiryDate', 'score', 'certificateUrl'];
+      const updateData: Record<string, unknown> = {};
+      for (const key of allowedFields) {
+        if (key in data && (data as Record<string, unknown>)[key] !== undefined) {
+          const value = (data as Record<string, unknown>)[key];
+          if (key === 'enrolledAt' || key === 'completedAt' || key === 'expiryDate') {
+            updateData[key] = value ? new Date(value as string) : value;
+          } else {
+            updateData[key] = value;
+          }
+        }
+      }
+
+      const enrollment = await db.trainingEnrollment.update({
+        where: { id },
+        data: updateData,
+      });
+
+      await createAuditLog({
+        userId,
+        action: 'TRAINING_ENROLLMENT_UPDATED',
+        resourceType: 'TrainingEnrollment',
+        resourceId: id,
+        details: `Training enrollment ${id} updated`,
+        changes: updateData,
+      });
+
+      return NextResponse.json({ success: true, data: enrollment });
+    }
+
+    // Default: update course
+    const allowedFields = ['title', 'category', 'provider', 'durationHours', 'isMandatory', 'targetAudience', 'certification', 'validForMonths', 'status'];
+    const updateData: Record<string, unknown> = {};
+    for (const key of allowedFields) {
+      if (key in data && (data as Record<string, unknown>)[key] !== undefined) {
+        updateData[key] = (data as Record<string, unknown>)[key];
+      }
+    }
+
+    const course = await db.trainingCourse.update({
+      where: { id },
+      data: updateData,
+    });
+
+    await createAuditLog({
+      userId,
+      action: 'TRAINING_COURSE_UPDATED',
+      resourceType: 'TrainingCourse',
+      resourceId: id,
+      details: `Training course "${course.title}" updated`,
+      changes: updateData,
+    });
+
+    return NextResponse.json({ success: true, data: course });
+  } catch (error) {
+    console.error('Failed to update training data:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to update training data' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/training - Delete a training course or enrollment
+export async function DELETE(request: NextRequest) {
+  try {
+    const auth = await authGuard({ allowedRoles: ['admin', 'compliance_manager'] });
+    if (!auth.authorized) return auth.error;
+
+    const rateLimit = checkRateLimit(getClientIdentifier(request), RATE_LIMITS.WRITE);
+    if (!rateLimit.allowed) return rateLimit.error;
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    const type = searchParams.get('type') || 'course';
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const userId = (auth.session?.user as Record<string, unknown>)?.userId as string || 'system';
+
+    if (type === 'enrollment') {
+      await db.trainingEnrollment.delete({ where: { id } });
+    } else {
+      await db.trainingCourse.delete({ where: { id } });
+    }
+
+    await createAuditLog({
+      userId,
+      action: type === 'enrollment' ? 'TRAINING_ENROLLMENT_DELETED' : 'TRAINING_COURSE_DELETED',
+      resourceType: type === 'enrollment' ? 'TrainingEnrollment' : 'TrainingCourse',
+      resourceId: id,
+      details: `Training ${type} ${id} deleted`,
+    });
+
+    return NextResponse.json({ success: true, message: `${type} deleted` });
+  } catch (error) {
+    console.error('Failed to delete training data:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to delete training data' },
+      { status: 500 }
+    );
+  }
+}

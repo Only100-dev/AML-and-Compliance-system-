@@ -1,0 +1,712 @@
+'use client';
+
+import React, { useState, useMemo } from 'react';
+import { useTrainingCourses, useTrainingEnrollments } from '@/lib/api-hooks';
+import type { TrainingCourseItem, TrainingEnrollmentItem, TrainingStatus } from '@/lib/types';
+import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+
+// shadcn/ui
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from '@/components/ui/tabs';
+
+// Lucide icons
+import {
+  GraduationCap,
+  Plus,
+  Search,
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  Brain,
+  Award,
+  Users,
+  Calendar,
+  RefreshCw,
+  BookOpen,
+  Star,
+  Loader2,
+} from 'lucide-react';
+
+// ─── Helpers ─────────────────────────────────────────────────────────────
+
+function normalizeTrainingStatus(status: string): TrainingStatus {
+  const normalized = status.toLowerCase();
+  const validStatuses: TrainingStatus[] = ['enrolled', 'in_progress', 'completed', 'expired', 'overdue'];
+  if (validStatuses.includes(normalized as TrainingStatus)) return normalized as TrainingStatus;
+  return normalized.replace(/\s+/g, '_') as TrainingStatus;
+}
+
+function getStatusBadge(status: string) {
+  const normalized = normalizeTrainingStatus(status);
+  const config: Record<TrainingStatus, { label: string; className: string; icon?: React.ElementType }> = {
+    enrolled: { label: 'Enrolled', className: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
+    in_progress: { label: 'In Progress', className: 'bg-amber/15 text-amber border-amber/30' },
+    completed: { label: 'Completed', className: 'bg-emerald/15 text-emerald border-emerald/30', icon: CheckCircle2 },
+    expired: { label: 'Expired', className: 'bg-rose/15 text-rose border-rose/30' },
+    overdue: { label: 'Overdue', className: 'bg-rose/15 text-rose border-rose/30' },
+  };
+  const c = config[normalized];
+  if (!c) return <Badge variant="outline" className="text-[10px]">{status}</Badge>;
+  const Icon = c.icon;
+  return (
+    <Badge className={cn('text-[10px] border', c.className, normalized === 'overdue' && 'animate-pulse-subtle')}>
+      {Icon && <Icon className="w-3 h-3 mr-1" />}
+      {c.label}
+    </Badge>
+  );
+}
+
+function getUrgencyIndicator(expiryDate: string): { label: string; className: string; icon: React.ElementType; daysLeft: number } {
+  if (!expiryDate) return { label: 'N/A', className: 'text-muted-foreground', icon: Clock, daysLeft: 0 };
+  const now = new Date();
+  const expiry = new Date(expiryDate);
+  const diffMs = expiry.getTime() - now.getTime();
+  const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  if (daysLeft < 0) {
+    return { label: `Expired ${Math.abs(daysLeft)}d ago`, className: 'text-rose', icon: AlertTriangle, daysLeft };
+  }
+  if (daysLeft <= 30) {
+    return { label: `${daysLeft}d remaining`, className: 'text-amber', icon: AlertTriangle, daysLeft };
+  }
+  if (daysLeft <= 90) {
+    return { label: `${daysLeft}d remaining`, className: 'text-blue-400', icon: Clock, daysLeft };
+  }
+  return { label: `${daysLeft}d remaining`, className: 'text-emerald', icon: Clock, daysLeft };
+}
+
+function formatDate(dateStr: string): string {
+  if (!dateStr) return '—';
+  return new Date(dateStr).toLocaleDateString('en-AE', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+// ─── Summary Card Component ──────────────────────────────────────────────
+
+function SummaryCard({
+  icon: Icon,
+  label,
+  value,
+  subValue,
+  color,
+  borderColor,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string | number;
+  subValue?: React.ReactNode;
+  color: string;
+  borderColor: string;
+}) {
+  return (
+    <Card className={cn('rounded-2xl border-border/50 shadow-sm hover:shadow-md transition-shadow', borderColor)}>
+      <CardContent className="p-4 sm:p-6">
+        <div className="flex items-start justify-between">
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">{label}</p>
+            <p className={cn('text-2xl font-bold', color)}>{value}</p>
+            {subValue && <div className="mt-1">{subValue}</div>}
+          </div>
+          <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', `${color.replace('text-', 'bg-')}/10`)}>
+            <Icon className={cn('w-5 h-5', color)} />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Course Card Component ───────────────────────────────────────────────
+
+function CourseCard({ course }: { course: TrainingCourseItem }) {
+  const completionPct = course.enrolledCount > 0
+    ? Math.round((course.completedCount / course.enrolledCount) * 100)
+    : 0;
+
+  return (
+    <Card className="rounded-2xl border-border/50 shadow-sm hover:shadow-md transition-shadow glass-card">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <CardTitle className="text-sm font-semibold leading-tight line-clamp-2">{course.title}</CardTitle>
+            <CardDescription className="text-xs mt-1 flex items-center gap-2">
+              <span>{course.provider}</span>
+              <span className="text-muted-foreground/50">•</span>
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3" /> {course.durationHours}h
+              </span>
+            </CardDescription>
+          </div>
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            {course.isMandatory && (
+              <Badge className="bg-rose/15 text-rose border-rose/30 text-[9px] border">
+                Mandatory
+              </Badge>
+            )}
+            {course.certification && (
+              <Badge className="bg-emerald/15 text-emerald border-emerald/30 text-[9px] border">
+                <Award className="w-3 h-3 mr-0.5" /> Cert
+              </Badge>
+            )}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* Category & Audience */}
+        <div className="flex flex-wrap gap-1.5">
+          <Badge variant="outline" className="text-[10px] rounded-lg gap-1">
+            <BookOpen className="w-3 h-3" /> {course.category}
+          </Badge>
+          <Badge variant="outline" className="text-[10px] rounded-lg gap-1">
+            <Users className="w-3 h-3" /> {course.targetAudience}
+          </Badge>
+        </div>
+
+        {/* Enrollment Progress */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">
+              {course.completedCount} / {course.enrolledCount} completed
+            </span>
+            <span className={cn('font-semibold', completionPct >= 90 ? 'text-emerald' : completionPct >= 60 ? 'text-amber' : 'text-rose')}>
+              {completionPct}%
+            </span>
+          </div>
+          <Progress value={completionPct} className="h-1.5" />
+        </div>
+
+        {/* Bottom row: Validity + Expiry Alerts */}
+        <div className="flex items-center justify-between pt-1 border-t border-border/30">
+          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+            <Calendar className="w-3 h-3" /> Valid {course.validForMonths}mo
+          </span>
+          {course.expiryAlerts > 0 ? (
+            <Badge className="bg-amber/15 text-amber border-amber/30 text-[10px] border gap-1">
+              <AlertTriangle className="w-3 h-3" /> {course.expiryAlerts} expiring
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px] rounded-lg text-emerald border-emerald/30 gap-1">
+              <CheckCircle2 className="w-3 h-3" /> No alerts
+            </Badge>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Expiry Alert Row Component ──────────────────────────────────────────
+
+function ExpiryAlertRow({ enrollment }: { enrollment: TrainingEnrollmentItem }) {
+  const urgency = getUrgencyIndicator(enrollment.expiryDate);
+  const UrgencyIcon = urgency.icon;
+
+  const handleReEnroll = () => {
+    toast.success('Re-enrollment initiated', {
+      description: `${enrollment.userName} re-enrolled in ${enrollment.courseTitle}`,
+    });
+  };
+
+  return (
+    <div className={cn(
+      'flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border transition-all hover:shadow-sm',
+      urgency.daysLeft < 0
+        ? 'bg-rose/5 border-rose/20'
+        : urgency.daysLeft <= 30
+        ? 'bg-amber/5 border-amber/20'
+        : 'bg-blue-500/5 border-blue-500/20'
+    )}>
+      <div className="flex items-start gap-3 min-w-0">
+        <div className={cn(
+          'w-9 h-9 rounded-lg flex items-center justify-center shrink-0',
+          urgency.daysLeft < 0
+            ? 'bg-rose/15'
+            : urgency.daysLeft <= 30
+            ? 'bg-amber/15'
+            : 'bg-blue-500/15'
+        )}>
+          <UrgencyIcon className={cn('w-4 h-4', urgency.className)} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold truncate">{enrollment.userName}</p>
+          <p className="text-xs text-muted-foreground truncate">{enrollment.courseTitle}</p>
+          <div className="flex items-center gap-2 mt-1">
+            <Badge variant="outline" className="text-[9px] rounded-lg">{enrollment.department}</Badge>
+            {enrollment.status === 'overdue' ? (
+              <Badge className="bg-rose/15 text-rose border-rose/30 text-[9px] border animate-pulse-subtle">Overdue</Badge>
+            ) : enrollment.status === 'expired' ? (
+              <Badge className="bg-rose/15 text-rose border-rose/30 text-[9px] border">Expired</Badge>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 sm:shrink-0 pl-12 sm:pl-0">
+        <div className="text-right">
+          <p className={cn('text-xs font-semibold', urgency.className)}>{urgency.label}</p>
+          <p className="text-[10px] text-muted-foreground">Exp: {formatDate(enrollment.expiryDate)}</p>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleReEnroll}
+          className="rounded-lg text-xs h-8 gap-1.5 shrink-0"
+        >
+          <RefreshCw className="w-3 h-3" /> Re-enroll
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═════════════════════════════════════════════════════════════════════════
+
+export function TrainingCertifications() {
+  const { data: coursesData, loading: coursesLoading, error: coursesError } = useTrainingCourses();
+  const { data: enrollmentsData, loading: enrollmentsLoading, error: enrollmentsError } = useTrainingEnrollments();
+
+  const [activeTab, setActiveTab] = useState('catalog');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+
+  // ─── Enrich API data to match component types ────────────────────────
+  // API returns raw DB records that lack some computed fields.
+  // We derive enrolledCount, completedCount, expiryAlerts from enrollments,
+  // and courseTitle from the courses lookup.
+  const courses: TrainingCourseItem[] = useMemo(() => {
+    const rawCourses = coursesData || [];
+    const rawEnrollments = enrollmentsData || [];
+    return rawCourses.map(course => {
+      const courseEnrollments = rawEnrollments.filter(e => e.courseId === course.id);
+      const enrolledCount = courseEnrollments.length;
+      const completedCount = courseEnrollments.filter(e => normalizeTrainingStatus(e.status) === 'completed').length;
+      const expiryAlerts = courseEnrollments.filter(e => {
+        if (!e.expiryDate) return false;
+        const daysLeft = getUrgencyIndicator(e.expiryDate).daysLeft;
+        return daysLeft <= 90;
+      }).length;
+      return {
+        id: course.id,
+        title: course.title,
+        category: course.category,
+        provider: course.provider || '',
+        durationHours: course.durationHours,
+        isMandatory: course.isMandatory,
+        targetAudience: course.targetAudience || '',
+        certification: course.certification,
+        validForMonths: course.validForMonths,
+        enrolledCount,
+        completedCount,
+        expiryAlerts,
+      };
+    });
+  }, [coursesData, enrollmentsData]);
+
+  const enrollments: TrainingEnrollmentItem[] = useMemo(() => {
+    const rawEnrollments = enrollmentsData || [];
+    const rawCourses = coursesData || [];
+    const courseMap = new Map(rawCourses.map(c => [c.id, c.title]));
+    return rawEnrollments.map(e => ({
+      id: e.id,
+      courseId: e.courseId,
+      courseTitle: courseMap.get(e.courseId) || e.courseId,
+      userName: e.userName,
+      department: e.department,
+      status: e.status as TrainingStatus,
+      enrolledAt: e.enrolledAt,
+      completedAt: e.completedAt || '',
+      expiryDate: e.expiryDate || '',
+      score: e.score ?? 0,
+    }));
+  }, [enrollmentsData, coursesData]);
+
+  // ─── Computed Stats ───────────────────────────────────────────────────
+  const stats = useMemo(() => {
+    const totalCourses = courses.length;
+    const mandatoryCourses = courses.filter(c => c.isMandatory);
+    const totalMandatoryEnrolled = mandatoryCourses.reduce((sum, c) => sum + c.enrolledCount, 0);
+    const totalMandatoryCompleted = mandatoryCourses.reduce((sum, c) => sum + c.completedCount, 0);
+    const mandatoryCompletionRate = totalMandatoryEnrolled > 0
+      ? Math.round((totalMandatoryCompleted / totalMandatoryEnrolled) * 100)
+      : 0;
+
+    const expiringCerts = courses.reduce((sum, c) => sum + c.expiryAlerts, 0);
+    const overdueTraining = enrollments.filter(e => normalizeTrainingStatus(e.status) === 'overdue').length;
+
+    return { totalCourses, mandatoryCompletionRate, expiringCerts, overdueTraining };
+  }, [courses, enrollments]);
+
+  // ─── Filtered Course Catalog ──────────────────────────────────────────
+  const filteredCourses = useMemo(() => {
+    return courses.filter(course => {
+      const matchesSearch = searchQuery
+        ? course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          course.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          course.category.toLowerCase().includes(searchQuery.toLowerCase())
+        : true;
+      const matchesCategory = filterCategory !== 'all'
+        ? course.category === filterCategory
+        : true;
+      return matchesSearch && matchesCategory;
+    });
+  }, [courses, searchQuery, filterCategory]);
+
+  // ─── Filtered Enrollments ─────────────────────────────────────────────
+  const filteredEnrollments = useMemo(() => {
+    return enrollments.filter(enrollment => {
+      const matchesSearch = searchQuery
+        ? enrollment.courseTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          enrollment.userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          enrollment.department.toLowerCase().includes(searchQuery.toLowerCase())
+        : true;
+      const matchesStatus = filterStatus !== 'all'
+        ? normalizeTrainingStatus(enrollment.status) === filterStatus
+        : true;
+      return matchesSearch && matchesStatus;
+    });
+  }, [enrollments, searchQuery, filterStatus]);
+
+  // ─── Expiry Alert Items ───────────────────────────────────────────────
+  const expiryAlertItems = useMemo(() => {
+    return enrollments
+      .filter(e => {
+        const s = normalizeTrainingStatus(e.status);
+        return s === 'expired' || s === 'overdue' || (e.expiryDate && getUrgencyIndicator(e.expiryDate).daysLeft <= 90);
+      })
+      .sort((a, b) => {
+        const aUrgency = getUrgencyIndicator(a.expiryDate);
+        const bUrgency = getUrgencyIndicator(b.expiryDate);
+        return aUrgency.daysLeft - bUrgency.daysLeft;
+      });
+  }, [enrollments]);
+
+  // ─── Category options for filter ──────────────────────────────────────
+  const categories = useMemo(() => {
+    const cats = new Set(courses.map(c => c.category));
+    return Array.from(cats);
+  }, [courses]);
+
+  // ─── Loading state ─────────────────────────────────────────────────────
+  if (coursesLoading || enrollmentsLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+        <Loader2 className="w-8 h-8 animate-spin mb-3" />
+        <p className="text-sm">Loading training data...</p>
+      </div>
+    );
+  }
+
+  // ─── Error state ──────────────────────────────────────────────────────
+  if (coursesError || enrollmentsError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-rose">
+        <AlertTriangle className="w-8 h-8 mb-3" />
+        <p className="text-sm font-medium">Failed to load training data</p>
+        <p className="text-xs text-muted-foreground mt-1">{coursesError || enrollmentsError}</p>
+      </div>
+    );
+  }
+
+  const handleEnrollStaff = () => {
+    toast.success('Staff enrollment dialog', {
+      description: 'Select staff members and courses to enroll.',
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* ─── Header Section ──────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <GraduationCap className="w-6 h-6 text-emerald" />
+            Training &amp; Certifications
+          </h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Track staff training, certifications, and compliance requirements
+          </p>
+        </div>
+        <Button
+          onClick={handleEnrollStaff}
+          className="rounded-xl bg-emerald hover:bg-emerald-dark text-white shadow-sm shrink-0"
+        >
+          <Plus className="w-4 h-4 mr-2" /> Enroll Staff
+        </Button>
+      </div>
+
+      {/* ─── Summary Statistics ───────────────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <SummaryCard
+          icon={BookOpen}
+          label="Total Courses"
+          value={stats.totalCourses}
+          color="text-emerald"
+          borderColor=""
+        />
+        <SummaryCard
+          icon={CheckCircle2}
+          label="Mandatory Completion"
+          value={`${stats.mandatoryCompletionRate}%`}
+          subValue={
+            <Progress value={stats.mandatoryCompletionRate} className="h-1.5 mt-1.5" />
+          }
+          color={stats.mandatoryCompletionRate >= 90 ? 'text-emerald' : stats.mandatoryCompletionRate >= 70 ? 'text-amber' : 'text-rose'}
+          borderColor=""
+        />
+        <SummaryCard
+          icon={AlertTriangle}
+          label="Expiring Certs"
+          value={stats.expiringCerts}
+          color="text-amber"
+          borderColor={stats.expiringCerts > 0 ? 'border-amber/20' : ''}
+        />
+        <SummaryCard
+          icon={Clock}
+          label="Overdue Training"
+          value={stats.overdueTraining}
+          color="text-rose"
+          borderColor={stats.overdueTraining > 0 ? 'border-rose/20' : ''}
+        />
+      </div>
+
+      {/* ─── Tabs ─────────────────────────────────────────────────────── */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <TabsList className="bg-muted/50 rounded-xl">
+            <TabsTrigger value="catalog" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-emerald/15 data-[state=active]:text-emerald">
+              <BookOpen className="w-3.5 h-3.5" /> Course Catalog
+            </TabsTrigger>
+            <TabsTrigger value="enrollments" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-emerald/15 data-[state=active]:text-emerald">
+              <Users className="w-3.5 h-3.5" /> Staff Enrollments
+            </TabsTrigger>
+            <TabsTrigger value="expiry" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-emerald/15 data-[state=active]:text-emerald">
+              <AlertTriangle className="w-3.5 h-3.5" /> Expiry Alerts
+              {expiryAlertItems.length > 0 && (
+                <Badge className="bg-amber/15 text-amber border-amber/30 text-[9px] border ml-0.5">
+                  {expiryAlertItems.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Search & Filters */}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="rounded-lg pl-9 h-8 text-xs"
+              />
+            </div>
+            {activeTab === 'catalog' && (
+              <Select value={filterCategory} onValueChange={setFilterCategory}>
+                <SelectTrigger className="w-[130px] h-8 text-xs rounded-lg">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categories.map(cat => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {activeTab === 'enrollments' && (
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-[130px] h-8 text-xs rounded-lg">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="enrolled">Enrolled</SelectItem>
+                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="expired">Expired</SelectItem>
+                  <SelectItem value="overdue">Overdue</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        </div>
+
+        {/* ─── Course Catalog Tab ────────────────────────────────────── */}
+        <TabsContent value="catalog" className="mt-0">
+          {filteredCourses.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <BookOpen className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">No courses found matching your criteria</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredCourses.map(course => (
+                <CourseCard key={course.id} course={course} />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ─── Staff Enrollments Tab ─────────────────────────────────── */}
+        <TabsContent value="enrollments" className="mt-0">
+          <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden">
+            <ScrollArea className="max-h-[calc(100vh-400px)] custom-scrollbar">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="text-xs font-semibold">Course Title</TableHead>
+                    <TableHead className="text-xs font-semibold">Staff Name</TableHead>
+                    <TableHead className="text-xs font-semibold hidden md:table-cell">Department</TableHead>
+                    <TableHead className="text-xs font-semibold">Status</TableHead>
+                    <TableHead className="text-xs font-semibold hidden sm:table-cell">Enrolled</TableHead>
+                    <TableHead className="text-xs font-semibold hidden lg:table-cell">Completed</TableHead>
+                    <TableHead className="text-xs font-semibold hidden lg:table-cell">Expiry Date</TableHead>
+                    <TableHead className="text-xs font-semibold text-right">Score</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredEnrollments.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-12 text-muted-foreground text-sm">
+                        No enrollments found matching your criteria
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredEnrollments.map(enrollment => (
+                      <TableRow key={enrollment.id} className="hover:bg-muted/30 transition-colors">
+                        <TableCell className="text-xs font-medium max-w-[200px] truncate">
+                          <div className="flex items-center gap-1.5">
+                            <GraduationCap className="w-3.5 h-3.5 text-emerald shrink-0" />
+                            <span className="truncate">{enrollment.courseTitle}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-6 h-6 rounded-full bg-emerald/10 flex items-center justify-center shrink-0">
+                              <span className="text-[9px] font-bold text-emerald">
+                                {enrollment.userName.split(' ').map(n => n[0]).join('')}
+                              </span>
+                            </div>
+                            <span className="truncate">{enrollment.userName}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground hidden md:table-cell">
+                          {enrollment.department}
+                        </TableCell>
+                        <TableCell>{getStatusBadge(enrollment.status)}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">
+                          {formatDate(enrollment.enrolledAt)}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">
+                          {enrollment.completedAt ? formatDate(enrollment.completedAt) : '—'}
+                        </TableCell>
+                        <TableCell className="text-xs hidden lg:table-cell">
+                          {enrollment.expiryDate ? (
+                            <span className={cn(
+                              'flex items-center gap-1',
+                              getUrgencyIndicator(enrollment.expiryDate).className
+                            )}>
+                              <Calendar className="w-3 h-3" />
+                              {formatDate(enrollment.expiryDate)}
+                            </span>
+                          ) : '—'}
+                        </TableCell>
+                        <TableCell className="text-xs text-right">
+                          {enrollment.score > 0 ? (
+                            <span className={cn(
+                              'font-semibold',
+                              enrollment.score >= 80 ? 'text-emerald' :
+                              enrollment.score >= 60 ? 'text-amber' : 'text-rose'
+                            )}>
+                              {enrollment.score}%
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </Card>
+        </TabsContent>
+
+        {/* ─── Expiry Alerts Tab ─────────────────────────────────────── */}
+        <TabsContent value="expiry" className="mt-0">
+          {/* Alert Summary */}
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-rose/5 border border-rose/20">
+              <AlertTriangle className="w-4 h-4 text-rose shrink-0" />
+              <div>
+                <p className="text-lg font-bold text-rose">
+                  {expiryAlertItems.filter(e => getUrgencyIndicator(e.expiryDate).daysLeft < 0).length}
+                </p>
+                <p className="text-[10px] text-muted-foreground">Expired</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-amber/5 border border-amber/20">
+              <Clock className="w-4 h-4 text-amber shrink-0" />
+              <div>
+                <p className="text-lg font-bold text-amber">
+                  {expiryAlertItems.filter(e => { const d = getUrgencyIndicator(e.expiryDate).daysLeft; return d >= 0 && d <= 30; }).length}
+                </p>
+                <p className="text-[10px] text-muted-foreground">&lt; 30 Days</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-blue-500/5 border border-blue-500/20">
+              <Calendar className="w-4 h-4 text-blue-400 shrink-0" />
+              <div>
+                <p className="text-lg font-bold text-blue-400">
+                  {expiryAlertItems.filter(e => { const d = getUrgencyIndicator(e.expiryDate).daysLeft; return d > 30 && d <= 90; }).length}
+                </p>
+                <p className="text-[10px] text-muted-foreground">&lt; 90 Days</p>
+              </div>
+            </div>
+          </div>
+
+          {expiryAlertItems.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-emerald opacity-50" />
+              <p className="text-sm">No expiring certifications — all clear!</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {expiryAlertItems.map(enrollment => (
+                <ExpiryAlertRow key={enrollment.id} enrollment={enrollment} />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
