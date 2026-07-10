@@ -1,0 +1,135 @@
+{
+  "timestamp": "2026-06-19T22:17:34.283Z",
+  "target": "http://localhost:3000",
+  "config": {
+    "CONCURRENT_USERS": 20,
+    "REQUESTS_PER_SECOND_PER_USER": 5,
+    "DURATION_SECONDS": 60,
+    "P95_THRESHOLD_MS": 300,
+    "ERROR_RATE_THRESHOLD": 0.001
+  },
+  "endpoints": [
+    {
+      "endpoint": "my-tasks",
+      "path": "/api/tasks/my-tasks?limit=50",
+      "totalSent": 5980,
+      "totalReceived": 5980,
+      "statusBuckets": {
+        "2xx": 5980,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "other": 0
+      },
+      "statusCounts": {
+        "200": 5980
+      },
+      "latencyMs": {
+        "min": 6.68,
+        "max": 214.86,
+        "mean": 76.06,
+        "p50": 74.93,
+        "p95": 125.51,
+        "p99": 161.35
+      },
+      "errors": 0,
+      "networkErrors": 0,
+      "timeouts": 0,
+      "errorRate": 0,
+      "throughputRps": 99.67,
+      "pass": true
+    },
+    {
+      "endpoint": "complaints",
+      "path": "/api/complaints?limit=50",
+      "totalSent": 5960,
+      "totalReceived": 5960,
+      "statusBuckets": {
+        "2xx": 5960,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "other": 0
+      },
+      "statusCounts": {
+        "200": 5960
+      },
+      "latencyMs": {
+        "min": 31.78,
+        "max": 215.3,
+        "mean": 92.63,
+        "p50": 90.4,
+        "p95": 119.49,
+        "p99": 172.44
+      },
+      "errors": 0,
+      "networkErrors": 0,
+      "timeouts": 0,
+      "errorRate": 0,
+      "throughputRps": 99.33,
+      "pass": true
+    },
+    {
+      "endpoint": "audit-integrity",
+      "path": "/api/audit/integrity",
+      "totalSent": 5960,
+      "totalReceived": 5960,
+      "statusBuckets": {
+        "2xx": 5960,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "other": 0
+      },
+      "statusCounts": {
+        "200": 5960
+      },
+      "latencyMs": {
+        "min": 20.13,
+        "max": 167.89,
+        "mean": 78.29,
+        "p50": 77.25,
+        "p95": 93.38,
+        "p99": 103.7
+      },
+      "errors": 0,
+      "networkErrors": 0,
+      "timeouts": 0,
+      "errorRate": 0,
+      "throughputRps": 99.33,
+      "pass": true
+    },
+    {
+      "endpoint": "department-risk",
+      "path": "/api/department-risk",
+      "totalSent": 5980,
+      "totalReceived": 5980,
+      "statusBuckets": {
+        "2xx": 5980,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "other": 0
+      },
+      "statusCounts": {
+        "200": 5980
+      },
+      "latencyMs": {
+        "min": 21.64,
+        "max": 183.31,
+        "mean": 87.9,
+        "p50": 85.74,
+        "p95": 111.09,
+        "p99": 149.87
+      },
+      "errors": 0,
+      "networkErrors": 0,
+      "timeouts": 0,
+      "errorRate": 0,
+      "throughputRps": 99.67,
+      "pass": true
+    }
+  ],
+  "overallPass": true,
+  "interrupted": false
+}

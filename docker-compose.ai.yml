@@ -1,0 +1,52 @@
+# ─── IC-OS On-Premise AI Infrastructure ───────────────────────────────────────
+# 100% UAE Data Residency (PDPL Compliant) — Zero external API calls
+# Usage: docker-compose -f docker-compose.ai.yml up -d
+# ──────────────────────────────────────────────────────────────────────────────
+
+version: '3.8'
+
+services:
+  # 1. Ollama: Local Model Inference Engine (5-Brain Architecture)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: docubay-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1  # Requires 1 NVIDIA GPU (e.g., RTX 3090/4090 or A10G)
+              capabilities: [gpu]
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # 2. Qdrant: Local Vector Database (RAG "Memory")
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: docubay-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__API_KEY=your_secure_api_key_here
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  ollama_data:
+  qdrant_data:

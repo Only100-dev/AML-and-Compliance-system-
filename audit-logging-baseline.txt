@@ -1,0 +1,117 @@
+IC-OS Audit-Logging Convention Check
+=====================================
+Total route files scanned: 131
+State-changing route files: 100
+Exempt: 7 (listed below)
+Violations: 55 (listed below)
+
+Exempt files:
+  - src/app/api/audit/integrity/route.ts — GET-only audit-integrity verifier (no state change; defense-in-depth exemption)
+  - src/app/api/audit/point-in-time/route.ts — Auditor read-only — POST/PUT/DELETE are 403 stubs by design (FDL 10/2025 Art. 11,15)
+  - src/app/api/auth/[...nextauth]/route.ts — NextAuth callback handler (re-export form) — auth framework, not business state
+  - src/app/api/bordereaux/validate/route.ts — Stateless validation utility (per audit brief; see P0-1c-checker notes)
+  - src/app/api/goaml-xml/route.ts — Stateless XML generation utility — no `db` import, no DB writes
+  - src/app/api/goaml/validate/route.ts — Stateless XML validation utility — no `db` import, no DB writes
+  - src/app/api/idempotency/route.ts — Internal idempotency-cache infrastructure (not business state)
+
+Violations (state-changing routes without createAuditLog):
+  - src/app/api/admin/ai-config/route.ts — methods: PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/adverse-media/esg-scan/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/adverse-media/route.ts — methods: DELETE, POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/ai/chat/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/ai/enhanced/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/ai/policy-rag/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/ai/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/alerts/status/route.ts — methods: PATCH — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/aml/route.ts — methods: PATCH, POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/attestations/route.ts — methods: POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/audit/time-travel/export/route.ts — methods: DELETE, POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/audits/route.ts — methods: DELETE, POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/bcp/[id]/route.ts — methods: PATCH — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/bcp/report-incident/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/bcp/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/bordereaux/submit/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/break-glass/revoke/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/break-glass/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/cases/route.ts — methods: DELETE, POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/chat/scenarios/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/compliance-alerts/route.ts — methods: POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/compliance-calendar/route.ts — methods: DELETE, POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/compliance-cases/route.ts — methods: POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/dmlro/route.ts — methods: DELETE, POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/evidence/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/kyc-upload/route.ts — methods: DELETE, POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/kyc/corporate/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/kyc/individual/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/kyc/route.ts — methods: DELETE, POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/labor/route.ts — methods: DELETE, POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/maker-checker/route.ts — methods: PATCH, POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/notifications/route.ts — methods: DELETE, POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/pii/reveal/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/policies/route.ts — methods: DELETE, POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/policy-wizard/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/quarterly-reporting/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/regulations/route.ts — methods: DELETE, POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/regulatory-deadlines/route.ts — methods: POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/regulatory/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/remediations/route.ts — methods: POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/risk-assessment/route.ts — methods: POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/sanctions/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/sar-deadlines/route.ts — methods: POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/scenarios/[id]/route.ts — methods: PATCH — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/tfs/confirm/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/tfs/false-positive/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/tfs/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/tfs/unfreeze/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/training-effectiveness/route.ts — methods: POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/training/route.ts — methods: DELETE, POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/users/me/route.ts — methods: PATCH — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/users/route.ts — methods: PATCH, POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/vasp-kyc/route.ts — methods: POST, PUT — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/vendors/[id]/route.ts — methods: PATCH — STATE_CHANGE_WITHOUT_AUDIT_LOG
+  - src/app/api/vendors/route.ts — methods: POST — STATE_CHANGE_WITHOUT_AUDIT_LOG
+
+Violations by route category (top-level path segment):
+  - ai: 4
+  - tfs: 4
+  - bcp: 3
+  - kyc: 3
+  - adverse-media: 2
+  - break-glass: 2
+  - users: 2
+  - vendors: 2
+  - admin: 1
+  - alerts: 1
+  - aml: 1
+  - attestations: 1
+  - audit: 1
+  - audits: 1
+  - bordereaux: 1
+  - cases: 1
+  - chat: 1
+  - compliance-alerts: 1
+  - compliance-calendar: 1
+  - compliance-cases: 1
+  - dmlro: 1
+  - evidence: 1
+  - kyc-upload: 1
+  - labor: 1
+  - maker-checker: 1
+  - notifications: 1
+  - pii: 1
+  - policies: 1
+  - policy-wizard: 1
+  - quarterly-reporting: 1
+  - regulations: 1
+  - regulatory: 1
+  - regulatory-deadlines: 1
+  - remediations: 1
+  - risk-assessment: 1
+  - sanctions: 1
+  - sar-deadlines: 1
+  - scenarios: 1
+  - training: 1
+  - training-effectiveness: 1
+  - vasp-kyc: 1
+
+Result: FAIL — 55 state-changing route(s) missing createAuditLog.
